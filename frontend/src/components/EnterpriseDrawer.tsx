@@ -113,7 +113,7 @@ export const EnterpriseDrawer: React.FC<EnterpriseDrawerProps> = ({ currentRoute
                 }}
                 className="w-full py-2 bg-[#39D353] hover:bg-[#2ea843] text-[#080c14] font-bold rounded-lg transition text-center"
               >
-                Return to ScalpPro Dashboard
+                Return to Trading Dashboard
               </button>
             </div>
           </div>

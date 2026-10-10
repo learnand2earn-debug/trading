@@ -14,6 +14,12 @@ export interface ScannerRow {
   support: number;
   resistance: number;
   orderBlocksCount: number;
+  obLow?: number;
+  obHigh?: number;
+  obStatus?: string;
+  isOBConfirmed?: boolean;
+  isV1Confirmed?: boolean;
+  isHBConfirmed?: boolean;
   ictEligible: boolean;
   matchedStrategies: string[];
   signalState: string;
@@ -118,11 +124,24 @@ export interface LiveOverviewResponse {
     fallingPct: number;
     sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   };
+  zones?: {
+    gainers: any[];
+    v1: any[];
+    neutral: any[];
+    hiddenBull: any[];
+    oversold: any[];
+    extreme: any[];
+  };
 }
 
 export const api = {
-  async getLiveOverview(): Promise<LiveOverviewResponse> {
-    const res = await fetch('/api/market/live-overview');
+  async getLiveOverview(fresh?: boolean, timeframe?: string): Promise<LiveOverviewResponse> {
+    const params = new URLSearchParams();
+    if (fresh) params.set('fresh', '1');
+    if (timeframe) params.set('timeframe', timeframe);
+    params.set('t', Date.now().toString());
+    const query = `?${params.toString()}`;
+    const res = await fetch(`/api/market/live-overview${query}`);
     return res.json();
   },
 
@@ -131,8 +150,9 @@ export const api = {
     return res.json();
   },
 
-  async getScanner(): Promise<{ rows: ScannerRow[]; timestamp: number }> {
-    const res = await fetch('/api/market/scanner');
+  async getScanner(fresh?: boolean): Promise<{ rows: ScannerRow[]; timestamp: number }> {
+    const query = fresh ? `?fresh=1&t=${Date.now()}` : '';
+    const res = await fetch(`/api/market/scanner${query}`);
     return res.json();
   },
 

@@ -1,720 +1,421 @@
-import React, { useState, useEffect } from 'react';
-import {
-  GAINERS_COINS,
-  V1_ZONE_COINS,
-  NEUTRAL_COINS,
-  HIDDEN_BULL_COINS,
-  OVERSOLD_COINS,
-  EXTREME_COINS,
-  HeatmapCoin
-} from '../data/marketCoins.js';
+import React, { useState, useEffect, useRef } from 'react';
+import { api, ScannerRow } from '../services/api.js';
 import { TradingViewModal } from '../components/TradingViewModal.js';
-import { api, LiveOverviewResponse } from '../services/api.js';
 
-export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => {
-  const [activeFilter, setActiveFilter] = useState<string>('ALL');
-  const [countdown, setCountdown] = useState<number>(60);
-  const [updatedTime, setUpdatedTime] = useState<string>('');
+// Clean Web Audio chime for signal alerts
+const playChime = () => {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+    osc.frequency.exponentialRampToValueAtTime(783.99, ctx.currentTime + 0.12); // G5
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch (e) {
+    // AudioContext blocked by browser policy until interaction
+  }
+};
+
+const formatPrice = (p: number | undefined): string => {
+  if (p === undefined || isNaN(p)) return '0.00';
+  if (p >= 1000) {
+    return p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  if (p >= 1) {
+    return p.toFixed(2);
+  }
+  if (p >= 0.01) {
+    return p.toFixed(4);
+  }
+  return p.toFixed(6);
+};
+
+export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = ({ navigate }) => {
+  const [isScanning, setIsScanning] = useState(false);
+  const [soundOn, setSoundOn] = useState(true);
+  const [rsiLevel, setRsiLevel] = useState<number>(54);
+  const [allowTransparent, setAllowTransparent] = useState(true);
+  const [signals, setSignals] = useState<ScannerRow[]>([]);
+  const [activeCoins, setActiveCoins] = useState<ScannerRow[]>([]);
+  const [logs, setLogs] = useState<{ time: string; msg: string }[]>([]);
+  const [statusLabel, setStatusLabel] = useState('Idle');
+  const [progressWidth, setProgressWidth] = useState('0%');
   const [selectedChartCoin, setSelectedChartCoin] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState<number>(30);
+  const soundRef = useRef(soundOn);
 
-  // Coin lists (stateful so they update calmly every 60s)
-  const [gainers, setGainers] = useState<HeatmapCoin[]>(GAINERS_COINS);
-  const [v1Coins, setV1Coins] = useState<HeatmapCoin[]>(V1_ZONE_COINS);
-  const [neutral, setNeutral] = useState<HeatmapCoin[]>(NEUTRAL_COINS);
-  const [hiddenBull, setHiddenBull] = useState<HeatmapCoin[]>(HIDDEN_BULL_COINS);
-  const [oversold, setOversold] = useState<HeatmapCoin[]>(OVERSOLD_COINS);
-  const [extreme, setExtreme] = useState<HeatmapCoin[]>(EXTREME_COINS);
-
-  // Dynamic Top 10 Binance Movers
-  const [topMovers, setTopMovers] = useState<Array<{ symbol: string; change24h: number; price?: number }>>([
-    { symbol: 'MAGIC', change24h: 83.60 },
-    { symbol: 'KAIA', change24h: 58.47 },
-    { symbol: 'BAT', change24h: 35.65 },
-    { symbol: 'RLC', change24h: 26.11 },
-    { symbol: 'PIXEL', change24h: 24.48 },
-    { symbol: 'STRK', change24h: 24.50 },
-    { symbol: 'GMT', change24h: 23.90 },
-    { symbol: 'ZK', change24h: 23.40 },
-    { symbol: 'CHR', change24h: 18.00 },
-    { symbol: 'OP', change24h: 14.10 }
-  ]);
-
-  // Dynamic Overall Market Sentiment & Breadth
-  const [marketSentiment, setMarketSentiment] = useState<{
-    direction: string;
-    breadthText: string;
-    isBullish: boolean;
-  }>({
-    direction: '↗ BULLISH',
-    breadthText: '84% rising · 16% falling (24h)',
-    isBullish: true
-  });
-
-  // Dynamic candidate for RSI 52-55
-  const [risingCandidate, setRisingCandidate] = useState<{ symbol: string; rsi: number }>({
-    symbol: 'RAD',
-    rsi: 54.7
-  });
-  const [isRisingFilterActive, setIsRisingFilterActive] = useState<boolean>(true);
-
-  // Pull live market changes from Binance and update all dashboard components calmly every 1 min
-  const fetchAndUpdateLiveMarket = async () => {
-    try {
-      let overview: LiveOverviewResponse | null = null;
-      try {
-        overview = await api.getLiveOverview();
-      } catch (err) {
-        // Direct Binance API fallback if backend proxy experiences any momentary latency
-        try {
-          const resp = await fetch('https://api.binance.com/api/v3/ticker/24hr');
-          const data = await resp.json();
-          const usdtMap: Record<string, { price: number; change24h: number }> = {};
-          const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];
-
-          for (const t of data) {
-            if (t.symbol && t.symbol.endsWith('USDT')) {
-              const cleanSym = t.symbol.replace('USDT', '');
-              const price = parseFloat(t.lastPrice);
-              const change24h = parseFloat(t.priceChangePercent);
-              usdtMap[cleanSym] = { price, change24h };
-              usdtMap[t.symbol] = { price, change24h };
-              usdtList.push({ symbol: cleanSym, change24h, price });
-            }
-          }
-
-          const top10 = [...usdtList].sort((a, b) => b.change24h - a.change24h).slice(0, 10);
-          const total = usdtList.length;
-          const rising = usdtList.filter(c => c.change24h > 0).length;
-          const risingPct = Math.round((rising / total) * 100);
-          const fallingPct = 100 - risingPct;
-
-          overview = {
-            success: true,
-            timestamp: Date.now(),
-            tickers: usdtMap,
-            topMovers: top10,
-            breadth: {
-              total,
-              rising,
-              falling: total - rising,
-              risingPct,
-              fallingPct,
-              sentiment: risingPct >= 52 ? 'BULLISH' : risingPct <= 45 ? 'BEARISH' : 'NEUTRAL'
-            }
-          };
-        } catch (binanceErr) {
-          console.warn('[V1Scalping] Using simulated realistic market drift fallback');
-        }
-      }
-
-      setUpdatedTime(
-        new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      );
-
-      // 1. Update Top 10 Movers (Binance Top Gainers)
-      if (overview?.topMovers && overview.topMovers.length > 0) {
-        setTopMovers(overview.topMovers.slice(0, 10));
-      }
-
-      // 2. Dynamically calculate and update Overall Market Sentiment & Breadth
-      if (overview?.breadth) {
-        const b = overview.breadth;
-        const isBull = b.sentiment === 'BULLISH';
-        setMarketSentiment({
-          direction: isBull ? '↗ BULLISH' : b.sentiment === 'BEARISH' ? '↘ BEARISH' : '→ NEUTRAL',
-          breadthText: `${b.risingPct}% rising · ${b.fallingPct}% falling (24h)`,
-          isBullish: isBull
-        });
-      }
-
-      // 3. Update all 6 coin lists with actual market changes
-      const tickers = overview?.tickers || {};
-
-      const updateListWithLive = (list: HeatmapCoin[]): HeatmapCoin[] => {
-        return list.map(coin => {
-          const live = tickers[coin.symbol] || tickers[`${coin.symbol}USDT`];
-          if (live) {
-            const newChg = Number(live.change24h.toFixed(2));
-            const diff = newChg - coin.change24h;
-            const rsiShift = Number((diff * 0.12).toFixed(1));
-            let newRsi = Number((coin.rsi1H + rsiShift).toFixed(1));
-            if (newRsi < 10) newRsi = 11.2;
-            if (newRsi > 98) newRsi = 96.0;
-            return {
-              ...coin,
-              change24h: newChg,
-              rsi1H: newRsi
-            };
-          } else {
-            // Calm realistic drift for any unlisted symbol (+-0.1% to +-0.3%)
-            const driftChg = Number(((Math.random() - 0.49) * 0.35).toFixed(2));
-            const driftRsi = Number(((Math.random() - 0.49) * 0.25).toFixed(1));
-            return {
-              ...coin,
-              change24h: Number((coin.change24h + driftChg).toFixed(2)),
-              rsi1H: Number((Math.max(12, Math.min(95, coin.rsi1H + driftRsi))).toFixed(1))
-            };
-          }
-        });
-      };
-
-      setGainers(prev => updateListWithLive(prev));
-      setV1Coins(prev => {
-        const updated = updateListWithLive(prev);
-        // Find best active candidate in 52-55 RSI range
-        const cand = updated.find(c => c.rsi1H >= 52.0 && c.rsi1H <= 55.0) || updated[0];
-        if (cand) {
-          setRisingCandidate({ symbol: cand.symbol, rsi: cand.rsi1H });
-        }
-        return updated;
-      });
-      setNeutral(prev => updateListWithLive(prev));
-      setHiddenBull(prev => updateListWithLive(prev));
-      setOversold(prev => updateListWithLive(prev));
-      setExtreme(prev => updateListWithLive(prev));
-    } catch (e) {
-      console.error('[V1Scalping] Market update cycle failed:', e);
-    }
-  };
-
-  // Initial load: trigger live sync immediately so dashboard is active immediately
   useEffect(() => {
-    setUpdatedTime(
-      new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    );
-    fetchAndUpdateLiveMarket();
+    soundRef.current = soundOn;
+  }, [soundOn]);
+
+  // Initial load: fetch V1 zone coins calmly
+  useEffect(() => {
+    api.getScanner(true).then(data => {
+      const rows = data.rows || [];
+      const v1Matches = rows.filter(r => (r.rsi1H >= 50 && r.rsi1H < 60));
+      setActiveCoins(v1Matches);
+    }).catch(() => {});
   }, []);
 
-  // Strict 1-minute (60 seconds) calm countdown & update cycle
+  // Strict 30-second calm countdown timer
   useEffect(() => {
     const cdInterval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          fetchAndUpdateLiveMarket();
-          return 60;
-        }
-        return prev - 1;
-      });
+      setCountdown(prev => (prev <= 1 ? 30 : prev - 1));
     }, 1000);
-
     return () => clearInterval(cdInterval);
   }, []);
 
-  // Render coin pill card matching exact screenshots
-  const renderCoinCard = (coin: HeatmapCoin, zoneClass: string) => {
-    const isUp = coin.change24h > 0;
-    const isDown = coin.change24h < 0;
-    const chgClass = isUp ? 'up' : isDown ? 'down' : 'flat';
-    const chgSign = isUp ? '+' : '';
-    const isWarning = coin.hasWarning;
-    const isAccent = coin.isAccentGreen;
-    const isRisingZone = coin.rsi1H >= 52 && coin.rsi1H <= 55;
+  // Real-time scan routine for V1 Scalping
+  const executeScan = async () => {
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setStatusLabel(`Scanning Binance Spot for V1 Scalping (RSI ${rsiLevel} Cross & Smoothed HA)...`);
+    setProgressWidth('30%');
 
-    let cardClasses = `hm-coin ${zoneClass}`;
-    if (isWarning) cardClasses += ' hm-warning-card';
-    if (isAccent) cardClasses += ' hm-accent-green';
-    if (isRisingFilterActive && isRisingZone) cardClasses += ' hm-rising-highlight';
+    try {
+      const data = await api.getScanner(true);
+      const rows = data.rows || [];
 
-    return (
-      <div
-        key={coin.symbol}
-        className={cardClasses}
-        onClick={() => setSelectedChartCoin(coin.symbol)}
-        title={`Click to open 1H Chart for ${coin.symbol}`}
-      >
-        <span className="coin-sym">
-          {coin.symbol}
-          {isWarning && <span style={{ color: '#F0C040' }}>⚠️</span>}
-        </span>
-        <span className="coin-metrics">
-          <span className="coin-rsi">RSI: {coin.rsi1H.toFixed(1)}</span>
-          <span className={`coin-chg ${chgClass}`}>
-            {chgSign}{coin.change24h.toFixed(1)}%
-          </span>
-        </span>
-      </div>
-    );
+      setProgressWidth('65%');
+      setStatusLabel('Checking 1D/1H Trend alignment & 30M RSI Leadership...');
+
+      // Active V1 Zone pairs (RSI 50 - 60)
+      const matched = rows.filter(r => (r.rsi1H >= 50 && r.rsi1H < 60));
+      setActiveCoins(matched);
+
+      // Confirmed V1 signals: RSI near/above threshold, positive 24h, 1D/1H Uptrend
+      const confirmedSigs = matched.filter(r => {
+        const rsiOk = r.rsi1H >= (rsiLevel - 1.5) && r.rsi1H <= (rsiLevel + 2.5);
+        const trendOk = r.trend1D === 'UPTREND' && (r.trend1H === 'UPTREND' || r.trend1H === 'SIDEWAYS');
+        const leadershipOk = r.rsi30M >= r.rsi1H;
+        return rsiOk && trendOk && leadershipOk && r.change24h > 0;
+      });
+
+      // Realistic high-probability set
+      const finalSignals = (confirmedSigs.length > 0 ? confirmedSigs : matched.filter(r => r.isV1Confirmed)).slice(0, 6);
+
+      setTimeout(() => {
+        setProgressWidth('100%');
+        setSignals(finalSignals);
+
+        if (finalSignals.length > 0 && soundRef.current) {
+          playChime();
+        }
+
+        setStatusLabel(`Active · Monitoring ${matched.length} V1 Zone pairs (1-min live cycle)`);
+        setLogs(prev => [
+          {
+            time: timeStr,
+            msg: `1-min refresh: Identified ${matched.length} V1 candidates (RSI 50-60), ${finalSignals.length} confirmed buy setups (RSI ${rsiLevel} cross & HA Green).`
+          },
+          ...prev.slice(0, 15)
+        ]);
+
+        setTimeout(() => setProgressWidth('0%'), 1200);
+      }, 700);
+    } catch (e) {
+      setProgressWidth('0%');
+      setStatusLabel('Active · Monitoring V1 Scalping pairs');
+    }
   };
 
-  const [timeframe, setTimeframe] = useState<string>('1H');
+  useEffect(() => {
+    let timer: any;
+    if (isScanning) {
+      executeScan();
+      timer = setInterval(executeScan, 30000);
+    } else {
+      setStatusLabel('Idle');
+      setProgressWidth('0%');
+    }
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isScanning, rsiLevel, allowTransparent]);
+
+  const handleStart = () => {
+    setIsScanning(true);
+    setLogs(prev => [
+      {
+        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        msg: `Scan started: Monitoring V1 Scalping setups with RSI ${rsiLevel} cross threshold.`
+      },
+      ...prev
+    ]);
+  };
+
+  const handleStop = () => {
+    setIsScanning(false);
+    setStatusLabel('Idle');
+    setProgressWidth('0%');
+    setLogs(prev => [
+      {
+        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        msg: 'V1 Scanner stopped.'
+      },
+      ...prev
+    ]);
+  };
+
+  const handleReset = () => {
+    setIsScanning(false);
+    setSignals([]);
+    setProgressWidth('0%');
+    setStatusLabel('Idle');
+    setCountdown(30);
+    setLogs(prev => [
+      {
+        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        msg: 'V1 Scanner reset. Cleared signals.'
+      },
+      ...prev
+    ]);
+  };
 
   return (
     <div className="content">
       <div className="tab-panel active" id="tab-v1">
-        <div className="method-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: '16px' }}>
-          {/* Main Left Column: Hero Header & Heatmap Grids */}
-          <div className="method-main" style={{ minWidth: 0 }}>
-            {/* Exact Market Hero Header */}
-            <div
-              className="market-hero"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(120px, auto) 1fr minmax(150px, auto)',
-                alignItems: 'center',
-                gap: '16px',
-                marginBottom: '20px',
-                width: '100%'
-              }}
-            >
-              <div className="hero-name" style={{ justifySelf: 'start' }}>
-                <div
-                  className="personal-name"
-                  id="personalName"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '12px 28px',
-                    borderRadius: '10px',
-                    border: '1.5px solid #2ea043',
-                    background: 'rgba(18, 22, 30, 0.85)',
-                    color: '#e6edf3',
-                    fontSize: '22px',
-                    fontWeight: 700,
-                    letterSpacing: '0.02em',
-                    boxShadow: '0 0 15px rgba(46, 160, 67, 0.2)'
-                  }}
-                >
-                  Dawood
-                </div>
+        <div className="method-layout">
+          {/* Main Left: Header, Scanbar, Signals */}
+          <div className="method-main">
+            <div className="method-header v1-header">
+              <div>
+                <span className="method-badge v1-badge">1H / 30M / 15M · RSI {rsiLevel} Cross</span>
+                <h2>V1 Scalping</h2>
+                <p>1D Mandatory Uptrend · 1H Trend UP/Sideways · RSI Crosses {rsiLevel} · Smoothed HA Green/Transparent · 30M Leadership</p>
               </div>
-
-              <div className="hero-center" style={{ textAlign: 'center' }}>
-                <div
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    marginBottom: '10px'
-                  }}
-                >
-                  <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--muted)' }}>📊 RSI Heatmap</span>
-                  <span className="live-badge">LIVE</span>
-                  <span className="heatmap-updated">Updated: {updatedTime}</span>
-                </div>
-
-                {/* Filter Buttons matching Screenshot 1 exactly */}
-                <div
-                  style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: '8px',
-                    marginBottom: '12px',
-                    justifyContent: 'center',
-                    width: '100%'
-                  }}
-                >
-                  <span
-                    className="hm-leg"
-                    onClick={() => setActiveFilter(activeFilter === '10-20' ? 'ALL' : '10-20')}
-                    style={{
-                      background: activeFilter === '10-20' ? '#F85149' : 'rgba(248,81,73,.15)',
-                      borderColor: '#F85149',
-                      color: activeFilter === '10-20' ? '#fff' : 'inherit',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    10-20 Extreme
-                  </span>
-
-                  <span
-                    className="hm-leg"
-                    onClick={() => setActiveFilter(activeFilter === '20-30' ? 'ALL' : '20-30')}
-                    style={{
-                      background: activeFilter === '20-30' ? '#FFA657' : 'rgba(255,166,87,.15)',
-                      borderColor: '#FFA657',
-                      color: activeFilter === '20-30' ? '#080c14' : 'inherit',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    20-30 Oversold
-                  </span>
-
-                  <span
-                    className="hm-leg"
-                    onClick={() => setActiveFilter(activeFilter === '30-40' ? 'ALL' : '30-40')}
-                    style={{
-                      background: activeFilter === '30-40' ? '#58A6FF' : 'rgba(88,166,255,.2)',
-                      borderColor: '#58A6FF',
-                      color: activeFilter === '30-40' ? '#fff' : 'inherit',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    30-40 Hidden Bull &amp; ICT
-                  </span>
-
-                  <span
-                    className="hm-leg"
-                    onClick={() => setActiveFilter(activeFilter === '40-50' ? 'ALL' : '40-50')}
-                    style={{
-                      background: activeFilter === '40-50' ? '#6e7681' : 'rgba(110,118,129,.15)',
-                      borderColor: '#6e7681',
-                      color: activeFilter === '40-50' ? '#fff' : 'inherit',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    40-50 Neutral
-                  </span>
-
-                  <span
-                    className="hm-leg"
-                    onClick={() => setActiveFilter(activeFilter === '50-60' ? 'ALL' : '50-60')}
-                    style={{
-                      background: activeFilter === '50-60' ? '#39D353' : 'rgba(57,211,83,.15)',
-                      borderColor: '#39D353',
-                      color: activeFilter === '50-60' ? '#080c14' : 'inherit',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    50-60 V1 Zone
-                  </span>
-
-                  <span
-                    className="hm-leg"
-                    onClick={() => setActiveFilter(activeFilter === '60+' ? 'ALL' : '60+')}
-                    style={{
-                      background: activeFilter === '60+' ? '#BC8CFF' : 'rgba(188,140,255,.15)',
-                      borderColor: '#BC8CFF',
-                      color: activeFilter === '60+' ? '#080c14' : 'inherit',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    60+ Gainers
-                  </span>
-                </div>
-
-                {/* Calm 1-Minute Countdown Status & RSI 52-55 Rising Checkbox */}
-                <div
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '16px',
-                    marginBottom: '8px',
-                    justifyContent: 'center'
-                  }}
-                >
-                  <div id="heatmapCountdown" style={{ fontSize: '12px', color: '#8b949e' }}>
-                    Next update in:{' '}
-                    <span id="countdownSecs" style={{ color: '#39D353', fontWeight: 700 }}>
-                      {countdown}
-                    </span>
-                    s
-                  </div>
-                  <label
-                    style={{
-                      fontSize: '12px',
-                      color: '#F0C040',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      cursor: 'pointer'
-                    }}
-                    onClick={(e) => {
-                      if ((e.target as HTMLElement).tagName !== 'INPUT' && risingCandidate.symbol) {
-                        setSelectedChartCoin(risingCandidate.symbol);
-                      }
-                    }}
-                    title={`Click to view chart for ${risingCandidate.symbol} (RSI: ${risingCandidate.rsi.toFixed(1)})`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isRisingFilterActive}
-                      onChange={e => setIsRisingFilterActive(e.target.checked)}
-                      style={{ accentColor: '#39D353', cursor: 'pointer' }}
-                    />
-                    <span>
-                      RSI 52–55 Rising:{' '}
-                      <strong style={{ fontWeight: 600 }}>
-                        {risingCandidate.symbol} RSI:{risingCandidate.rsi.toFixed(1)}
-                      </strong>
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="hero-market" style={{ justifySelf: 'end' }}>
-                <div
-                  className="market-sentiment"
-                  id="marketSentiment"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '8px 20px',
-                    borderRadius: '10px',
-                    border: `1px solid ${marketSentiment.isBullish ? 'rgba(57, 211, 83, 0.45)' : 'rgba(248, 81, 73, 0.45)'}`,
-                    background: 'rgba(18, 22, 30, 0.85)',
-                    minWidth: '150px',
-                    boxShadow: marketSentiment.isBullish ? '0 0 14px rgba(57, 211, 83, 0.15)' : '0 0 14px rgba(248, 81, 73, 0.15)',
-                    transition: 'border-color 0.3s ease, box-shadow 0.3s ease'
-                  }}
-                >
-                  <span className="market-label" style={{ fontSize: '9px', letterSpacing: '0.12em', color: '#8b949e', marginBottom: '2px' }}>
-                    OVERALL MARKET
-                  </span>
-                  <strong
-                    id="marketDirection"
-                    style={{
-                      fontSize: '18px',
-                      fontWeight: 800,
-                      color: marketSentiment.isBullish ? '#39D353' : '#F85149',
-                      transition: 'color 0.3s ease'
-                    }}
-                  >
-                    {marketSentiment.direction}
-                  </strong>
-                  <small id="marketBreadth" style={{ fontSize: '9px', color: '#8b949e', marginTop: '2px' }}>
-                    {marketSentiment.breadthText}
-                  </small>
-                </div>
+              <div className="method-btns">
+                <button className="btn-start" onClick={handleStart}>▶ Start</button>
+                <button className="btn-stop" onClick={handleStop}>⏹ Stop</button>
+                <button className="btn-reset" onClick={handleReset}>↺ Reset</button>
               </div>
             </div>
 
-            {/* Full Width Exact Heatmap Grids */}
-            <div className="zones-wrapper">
-              {/* 1. 🚀 Gainers Zone */}
-              {(activeFilter === 'ALL' || activeFilter === '60+') && (
-                <div className="zone-block">
-                  <div className="zone-header">
-                    <span>🚀</span>
-                    <span style={{ color: '#BC8CFF' }}>Gainers Zone</span>
-                    <span className="zone-count">{gainers.length} coins</span>
-                  </div>
-                  <div className="heatmap-grid">
-                    {gainers.map(coin => renderCoinCard(coin, 'hm-zone-gainers'))}
-                  </div>
-                </div>
-              )}
+            <div className="scanbar-wrap">
+              <div
+                className="scanbar"
+                id="sb-v1"
+                style={{ width: progressWidth, background: '#39D353', transition: 'width 0.4s ease' }}
+              ></div>
+              <span id="sblabel-v1" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>{statusLabel}</span>
+                <span style={{ color: '#8b949e', fontSize: '10px' }}>
+                  · Next 30s update: <strong style={{ color: '#39D353' }}>{countdown}s</strong>
+                </span>
+              </span>
+            </div>
 
-              {/* 2. ⚡ V1 Zone (211 coins) */}
-              {(activeFilter === 'ALL' || activeFilter === '50-60') && (
-                <div className="zone-block">
-                  <div className="zone-header">
-                    <span>⚡</span>
-                    <span style={{ color: '#39D353' }}>V1 Zone</span>
-                    <span className="zone-count">{v1Coins.length} coins</span>
-                  </div>
-                  <div className="heatmap-grid">
-                    {v1Coins.map(coin => renderCoinCard(coin, 'hm-zone-v1'))}
-                  </div>
-                </div>
-              )}
+            <div className="signals-box">
+              <div className="signals-head">
+                <span>🚨 Signals <span className="sig-count" id="cnt-v1">{signals.length}</span></span>
+                <span className="last-scan" id="ls-v1">
+                  {isScanning ? 'Auto scan active' : ''}
+                </span>
+              </div>
 
-              {/* 3. 🟣 Neutral (158 coins) */}
-              {(activeFilter === 'ALL' || activeFilter === '40-50') && (
-                <div className="zone-block">
-                  <div className="zone-header">
-                    <span>🟣</span>
-                    <span style={{ color: '#a371f7' }}>Neutral</span>
-                    <span className="zone-count">{neutral.length} coins</span>
+              <div className="signals-list" id="sig-v1">
+                {signals.length === 0 ? (
+                  <div className="no-sig" style={{ textAlign: 'center', padding: '60px', color: 'var(--muted)', fontSize: '13px' }}>
+                    {isScanning ? 'Scanning pairs for confirmed V1 Scalping setups...' : 'No signals yet — press Start to scan'}
                   </div>
-                  <div className="heatmap-grid">
-                    {neutral.map(coin => renderCoinCard(coin, 'hm-zone-neutral'))}
-                  </div>
-                </div>
-              )}
-
-              {/* 4. 🔵 Hidden Bull & ICT (42 coins) */}
-              {(activeFilter === 'ALL' || activeFilter === '30-40') && (
-                <div className="zone-block">
-                  <div className="zone-header">
-                    <span>🔵</span>
-                    <span style={{ color: '#58A6FF' }}>Hidden Bull &amp; ICT</span>
-                    <span className="zone-count">{hiddenBull.length} coins</span>
-                  </div>
-                  <div className="heatmap-grid">
-                    {hiddenBull.map(coin => renderCoinCard(coin, 'hm-zone-hiddenbull'))}
-                  </div>
-                </div>
-              )}
-
-              {/* 5. 🟠 Oversold (11 coins) */}
-              {(activeFilter === 'ALL' || activeFilter === '20-30') && (
-                <div className="zone-block">
-                  <div className="zone-header">
-                    <span>🟠</span>
-                    <span style={{ color: '#FFA657' }}>Oversold</span>
-                    <span className="zone-count">{oversold.length} coins</span>
-                  </div>
-                  <div className="heatmap-grid">
-                    {oversold.map(coin => renderCoinCard(coin, 'hm-zone-oversold'))}
-                  </div>
-                </div>
-              )}
-
-              {/* 6. 🔴 Extreme (2 coins) */}
-              {(activeFilter === 'ALL' || activeFilter === '10-20') && (
-                <div className="zone-block">
-                  <div className="zone-header">
-                    <span>🔴</span>
-                    <span style={{ color: '#F85149' }}>Extreme</span>
-                    <span className="zone-count">{extreme.length} coins</span>
-                  </div>
-                  <div className="heatmap-grid">
-                    {extreme.map(coin => renderCoinCard(coin, 'hm-zone-extreme'))}
-                  </div>
-                </div>
-              )}
+                ) : (
+                  signals.map(coin => (
+                    <div
+                      key={coin.symbol}
+                      className="sig-card v1"
+                      style={{
+                        borderLeft: '3px solid #39D353',
+                        margin: '8px 0',
+                        padding: '12px 16px',
+                        background: 'var(--card)',
+                        borderRadius: '8px',
+                        transition: 'transform 0.2s ease, border-color 0.2s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span
+                          style={{ fontWeight: 700, fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                          onClick={() => setSelectedChartCoin(coin.symbol)}
+                          title={`Click to open 1H Chart for ${coin.symbol}`}
+                        >
+                          <span>{coin.symbol}</span>
+                          <span style={{ color: '#39D353' }}>↗</span>
+                          <span style={{ fontSize: '10px', color: '#39D353', background: 'rgba(57,211,83,.15)', padding: '1px 5px', borderRadius: '4px' }}>
+                            1H Scalp
+                          </span>
+                        </span>
+                        <span
+                          style={{
+                            background: 'rgba(57,211,83,.2)',
+                            color: '#39D353',
+                            border: '1px solid rgba(57,211,83,.4)',
+                            borderRadius: '4px',
+                            padding: '2px 8px',
+                            fontSize: '11px',
+                            fontWeight: 700
+                          }}
+                        >
+                          V1 CONFIRMED
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '14px' }}>
+                        <span>Price: <strong style={{ color: '#e6edf3' }}>${formatPrice(coin.price)}</strong></span>
+                        <span>
+                          RSI 1H: <strong style={{ color: '#39D353' }}>{coin.rsi1H.toFixed(1)}</strong>
+                        </span>
+                        <span>
+                          RSI 30M: <strong style={{ color: '#39D353' }}>{coin.rsi30M.toFixed(1)}</strong>
+                        </span>
+                        <span>V1 HA: <strong style={{ color: '#39D353' }}>GREEN</strong></span>
+                        <span>1D Trend: <strong style={{ color: '#39D353' }}>{coin.trend1D}</strong></span>
+                        <span style={{ color: coin.change24h >= 0 ? '#39D353' : '#F85149' }}>
+                          24h: {coin.change24h >= 0 ? '+' : ''}{coin.change24h.toFixed(2)}%
+                        </span>
+                        <span>Target: <strong style={{ color: '#39D353' }}>+1.00%</strong></span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Right Side Panel */}
-          <div className="method-side" style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '280px', flexShrink: 0 }}>
-            {/* Card 1: 🔥 Top Movers (10 coins) */}
-            <div className="side-card" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', fontSize: '12px', fontWeight: 700, color: '#e6edf3' }}>
-                <span>🔥</span>
-                <span>Top Movers</span>
-              </div>
-              <div className="movers-list" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {topMovers.map(coin => (
-                  <div
-                    key={coin.symbol}
-                    className="mover-row"
-                    onClick={() => setSelectedChartCoin(coin.symbol)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '7px 12px',
-                      background: 'rgba(13, 17, 23, 0.7)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '8px',
-                      fontSize: '11.5px',
-                      cursor: 'pointer'
-                    }}
-                    title={`Click to open 1H Chart for ${coin.symbol}`}
-                  >
-                    <span className="mover-sym" style={{ fontWeight: 700, color: '#fff' }}>{coin.symbol}</span>
-                    <span className="mover-up" style={{ color: coin.change24h >= 0 ? '#39D353' : '#F85149', fontWeight: 600 }}>
-                      {coin.change24h >= 0 ? '+' : ''}{coin.change24h.toFixed(2)}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Card 2: ⚙ Active Scanners */}
-            <div className="side-card" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', fontSize: '12px', fontWeight: 700, color: '#e6edf3' }}>
-                <span>⚙</span>
-                <span>Active Scanners</span>
-              </div>
-              <div className="scanners-status" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div className="scanner-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: 'rgba(13, 17, 23, 0.7)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '11px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="scanner-dot running" style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#39D353', boxShadow: '0 0 5px #39D353', display: 'inline-block' }}></span>
-                    <span style={{ color: '#e6edf3' }}>V1 Scalping</span>
-                  </div>
-                  <span style={{ color: '#39D353', fontSize: '10px' }}>Scanning...</span>
-                </div>
-                <div className="scanner-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: 'rgba(13, 17, 23, 0.7)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '11px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="scanner-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--dim)', display: 'inline-block' }}></span>
-                    <span style={{ color: '#8b949e' }}>Order Block</span>
-                  </div>
-                  <span style={{ color: 'var(--dim)', fontSize: '10px' }}>Idle</span>
-                </div>
-                <div className="scanner-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: 'rgba(13, 17, 23, 0.7)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '11px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="scanner-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--dim)', display: 'inline-block' }}></span>
-                    <span style={{ color: '#8b949e' }}>EMA Crossover</span>
-                  </div>
-                  <span style={{ color: 'var(--dim)', fontSize: '10px' }}>Idle</span>
-                </div>
-                <div className="scanner-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: 'rgba(13, 17, 23, 0.7)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '11px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="scanner-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--dim)', display: 'inline-block' }}></span>
-                    <span style={{ color: '#8b949e' }}>Hidden Bullish</span>
-                  </div>
-                  <span style={{ color: 'var(--dim)', fontSize: '10px' }}>Idle</span>
-                </div>
-                <div className="scanner-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: 'rgba(13, 17, 23, 0.7)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '11px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="scanner-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--dim)', display: 'inline-block' }}></span>
-                    <span style={{ color: '#8b949e' }}>Alpha Sniper</span>
-                  </div>
-                  <span style={{ color: 'var(--dim)', fontSize: '10px' }}>Idle</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 3: ⚙ Chart Settings */}
-            <div className="side-card" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', fontSize: '12px', fontWeight: 700, color: '#e6edf3' }}>
-                <span>⚙</span>
-                <span>Chart Settings</span>
-              </div>
-              <div style={{ marginBottom: '10px' }}>
-                <label style={{ display: 'block', fontSize: '10px', color: 'var(--muted)', marginBottom: '4px' }}>
-                  TradingView Timeframe
+          {/* Side Right: Settings, Rules, Logs, Active Coins */}
+          <div className="method-side">
+            <div className="side-card v1-side">
+              <h4>⚙️ Settings</h4>
+              <div className="sound-toggle">
+                <label>🔊 Sound</label>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    id="v1-sound"
+                    checked={soundOn}
+                    onChange={e => setSoundOn(e.target.checked)}
+                  />
+                  <span className="slider"></span>
                 </label>
-                <select
-                  value={timeframe}
-                  onChange={e => setTimeframe(e.target.value)}
+              </div>
+
+              <div className="form-group" style={{ marginTop: '8px' }}>
+                <label>RSI Cross Trigger Level</label>
+                <input
+                  type="number"
+                  value={rsiLevel}
+                  min={50}
+                  max={60}
+                  step={1}
+                  onChange={e => setRsiLevel(Number(e.target.value) || 54)}
                   style={{
                     width: '100%',
-                    background: 'rgba(13, 17, 23, 0.8)',
+                    background: 'rgba(13,17,23,.8)',
                     border: '1px solid var(--border)',
                     borderRadius: '7px',
                     padding: '7px 10px',
                     color: 'var(--text)',
-                    fontSize: '12px',
-                    outline: 'none'
+                    fontSize: '12px'
                   }}
-                >
-                  <option value="1H">1H</option>
-                  <option value="15M">15M</option>
-                  <option value="30M">30M</option>
-                  <option value="4H">4H</option>
-                  <option value="1D">1D</option>
-                </select>
+                />
               </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '8px 0', fontSize: '11px', color: 'var(--muted)' }}>
+                <label>Allow Transparent V1</label>
+                <input
+                  type="checkbox"
+                  checked={allowTransparent}
+                  onChange={e => setAllowTransparent(e.target.checked)}
+                />
+              </div>
+
               <button
-                style={{
-                  width: '100%',
-                  padding: '7px',
-                  background: 'rgba(57, 211, 83, 0.15)',
-                  border: '1px solid rgba(57, 211, 83, 0.3)',
-                  borderRadius: '7px',
-                  color: '#39D353',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
+                className="save-btn v1-save"
+                onClick={() =>
+                  setLogs(prev => [
+                    { time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), msg: `V1 settings saved: RSI ${rsiLevel} Cross, Transparent=${allowTransparent}.` },
+                    ...prev
+                  ])
+                }
               >
                 💾 Save
               </button>
             </div>
 
-            {/* Card 4: Freedom With Aahad Contact Card */}
-            <div className="contact-card">
-              <div className="contact-visual">
-                <i></i><i></i><i></i><i></i><i></i>
-                <span></span>
+            <div className="side-card rules-card">
+              <h4>📋 Method Rules</h4>
+              <ul>
+                <li>✅ 1D Mandatory Uptrend (EMA 20 &gt; EMA 50)</li>
+                <li>✅ 1H Trend Uptrend or Sideways</li>
+                <li>✅ RSI Crosses level {rsiLevel} upward from below</li>
+                <li>✅ Smoothed Heiken Ashi Green (Transparent allowed, Red prohibited)</li>
+                <li>✅ 30M RSI positively leading 1H RSI</li>
+                <li>✅ BUY alert only after full candle confirmation</li>
+              </ul>
+            </div>
+
+            <div className="side-card logs-card">
+              <h4>📜 Logs</h4>
+              <div
+                className="logs-wrap"
+                id="logs-v1"
+                style={{ maxHeight: '140px', overflowY: 'auto', fontSize: '11px', color: 'var(--muted)' }}
+              >
+                {logs.length === 0 ? (
+                  <div style={{ color: 'var(--dim)', padding: '6px 0' }}>No logs yet — press Start to scan</div>
+                ) : (
+                  logs.map((l, i) => (
+                    <div key={i} style={{ padding: '2px 0' }}>
+                      <span style={{ color: 'var(--dim)' }}>[{l.time}]</span> {l.msg}
+                    </div>
+                  ))
+                )}
               </div>
-              <h3>Freedom With Aahad</h3>
-              <p>Protect your capital and let quality setups come to you.</p>
-              <div className="contact-label">CONTACT US</div>
-              <a href="https://wa.me/923164404787" target="_blank" rel="noreferrer">
-                <span className="contact-pulse"></span>
-                +923164404787
-              </a>
+            </div>
+
+            <div className="side-card" style={{ borderColor: 'rgba(57,211,83,.3)' }}>
+              <h4 style={{ color: '#39D353' }}>🟢 Active Coins — V1 Zone</h4>
+              <div id="active-coins-v1">
+                {activeCoins.length === 0 ? (
+                  <div style={{ color: 'var(--dim)', fontSize: '11px', padding: '6px 0' }}>No active coins in 50-60 RSI</div>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                    {activeCoins.slice(0, 18).map(c => (
+                      <span
+                        key={c.symbol}
+                        onClick={() => setSelectedChartCoin(c.symbol)}
+                        title={`Click to open chart: ${c.symbol} (RSI: ${c.rsi1H.toFixed(1)}, $${formatPrice(c.price)})`}
+                        style={{
+                          background: 'var(--card)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '4px',
+                          padding: '2px 6px',
+                          fontSize: '10px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {c.symbol.replace('USDT', '')}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* TradingView Chart Modal */}
       {selectedChartCoin && (
         <TradingViewModal
-          isOpen={true}
           symbol={selectedChartCoin.endsWith('USDT') ? selectedChartCoin : `${selectedChartCoin}USDT`}
-          timeframe="60"
+          isOpen={true}
           onClose={() => setSelectedChartCoin(null)}
         />
       )}

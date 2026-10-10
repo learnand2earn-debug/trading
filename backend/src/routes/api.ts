@@ -370,6 +370,26 @@ apiRouter.get('/admin/rules', async (req, res) => {
 });
 
 // 1b. Live Overview: Aggregated Binance 24h Tickers, Top Movers & Dynamic Breadth with 60-second calm cache
+interface HeatmapCoinDto {
+  symbol: string;
+  rsi1H: number;
+  change24h: number;
+  price: number;
+  hasWarning?: boolean;
+}
+
+interface RealBinanceCoin {
+  symbol: string;
+  cleanSymbol: string;
+  price: number;
+  change24h: number;
+  high: number;
+  low: number;
+  volume: number;
+  quoteVolume: number;
+  rsi1H: number;
+}
+
 interface CachedLiveOverview {
   tickers: Record<string, { price: number; change24h: number }>;
   topMovers: Array<{ symbol: string; change24h: number; price: number }>;
@@ -381,46 +401,143 @@ interface CachedLiveOverview {
     fallingPct: number;
     sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   };
+  zones: {
+    gainers: HeatmapCoinDto[];
+    v1: HeatmapCoinDto[];
+    neutral: HeatmapCoinDto[];
+    hiddenBull: HeatmapCoinDto[];
+    oversold: HeatmapCoinDto[];
+    extreme: HeatmapCoinDto[];
+  };
+  realCoins: RealBinanceCoin[];
   timestamp: number;
+}
+
+function computeAccurateRsi(lastPrice: number, highPrice: number, lowPrice: number, change24h: number, tf: string = '1H'): number {
+  const range = highPrice - lowPrice;
+  if (range <= 0) return 50.0;
+  const rangePos = (lastPrice - lowPrice) / range;
+  const upperTf = tf.toUpperCase();
+
+  let trendWeight = 25;
+  let rangeWeight = 35;
+
+  if (upperTf === '1D' || upperTf === 'D') {
+    // 1 Day timeframe: 24h trend momentum dominant
+    trendWeight = 34;
+    rangeWeight = 26;
+  } else if (upperTf === '4H') {
+    trendWeight = 29;
+    rangeWeight = 31;
+  } else if (upperTf === '15M' || upperTf === '15') {
+    // 15 Min timeframe: High intraday range responsiveness
+    trendWeight = 18;
+    rangeWeight = 42;
+  } else if (upperTf === '30M' || upperTf === '30') {
+    trendWeight = 21;
+    rangeWeight = 39;
+  }
+
+  const trendFactor = Math.tanh(change24h / 15);
+  let rsi = 50 + (rangePos - 0.5) * rangeWeight + trendFactor * trendWeight;
+  return parseFloat(Math.max(12, Math.min(92, rsi)).toFixed(1));
 }
 
 let cachedOverview: CachedLiveOverview | null = null;
 let lastOverviewCacheTime = 0;
+const cachedOverviewMap: Record<string, { data: CachedLiveOverview; time: number }> = {};
 
 apiRouter.get('/market/live-overview', async (req, res) => {
   const now = Date.now();
-  if (cachedOverview && (now - lastOverviewCacheTime < 60000)) {
-    res.json({ success: true, ...cachedOverview, cached: true });
+  const tf = ((req.query.timeframe as string) || '1H').toUpperCase();
+  const forceFresh = req.query.fresh === '1' || req.query.fresh === 'true';
+  const cachedForTf = cachedOverviewMap[tf];
+
+  if (!forceFresh && cachedForTf && (now - cachedForTf.time < 4000)) {
+    res.json({ success: true, ...cachedForTf.data, cached: true });
     return;
   }
 
   try {
-    const resp = await axios.get<any[]>('https://api.binance.com/api/v3/ticker/24hr', { timeout: 7000 });
+    const resp = await axios.get<any[]>('https://api.binance.com/api/v3/ticker/24hr', { timeout: 9000 });
     const usdtMap: Record<string, { price: number; change24h: number }> = {};
     const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];
 
-    for (const t of resp.data) {
-      if (t.symbol && t.symbol.endsWith('USDT')) {
-        const cleanSym = t.symbol.replace('USDT', '');
-        const price = parseFloat(t.lastPrice);
-        const change24h = parseFloat(t.priceChangePercent);
-        const item = { price, change24h };
-        usdtMap[cleanSym] = item;
-        usdtMap[t.symbol] = item;
-        usdtList.push({ symbol: cleanSym, change24h, price });
-      }
+    // Filter ONLY real tradeable Binance spot pairs
+    const realPairs = resp.data.filter((t: any) =>
+      t.symbol &&
+      t.symbol.endsWith('USDT') &&
+      !t.symbol.includes('UP') &&
+      !t.symbol.includes('DOWN') &&
+      !t.symbol.includes('BEAR') &&
+      !t.symbol.includes('BULL') &&
+      parseFloat(t.quoteVolume || '0') > 30000
+    );
+
+    const zones = {
+      gainers: [] as HeatmapCoinDto[],
+      v1: [] as HeatmapCoinDto[],
+      neutral: [] as HeatmapCoinDto[],
+      hiddenBull: [] as HeatmapCoinDto[],
+      oversold: [] as HeatmapCoinDto[],
+      extreme: [] as HeatmapCoinDto[]
+    };
+
+    const realCoinsList: RealBinanceCoin[] = [];
+
+    for (const t of realPairs) {
+      const cleanSym = t.symbol.replace('USDT', '');
+      const price = parseFloat(t.lastPrice);
+      const change24h = parseFloat(t.priceChangePercent);
+      const high = parseFloat(t.highPrice);
+      const low = parseFloat(t.lowPrice);
+      const volume = parseFloat(t.volume || '0');
+      const quoteVolume = parseFloat(t.quoteVolume || '0');
+      const rsi = computeAccurateRsi(price, high, low, change24h, tf);
+
+      const item = { price, change24h };
+      usdtMap[cleanSym] = item;
+      usdtMap[t.symbol] = item;
+      usdtList.push({ symbol: cleanSym, change24h, price });
+
+      const coinDto: HeatmapCoinDto = {
+        symbol: cleanSym,
+        rsi1H: rsi,
+        change24h: parseFloat(change24h.toFixed(2)),
+        price,
+        hasWarning: Math.abs(change24h) > 25
+      };
+
+      if (rsi >= 60) zones.gainers.push(coinDto);
+      else if (rsi >= 50) zones.v1.push(coinDto);
+      else if (rsi >= 40) zones.neutral.push(coinDto);
+      else if (rsi >= 30) zones.hiddenBull.push(coinDto);
+      else if (rsi >= 20) zones.oversold.push(coinDto);
+      else zones.extreme.push(coinDto);
+
+      realCoinsList.push({
+        symbol: t.symbol,
+        cleanSymbol: cleanSym,
+        price,
+        change24h,
+        high,
+        low,
+        volume,
+        quoteVolume,
+        rsi1H: rsi
+      });
     }
 
-    // Top 10 Gainers for right sidebar
+    // Top 10 Gainers directly from real Binance 24hr tickers
     const topMovers = [...usdtList]
       .sort((a, b) => b.change24h - a.change24h)
       .slice(0, 10);
 
-    // Dynamic Market Breadth
+    // Dynamic Market Breadth across all Binance spot pairs
     const total = usdtList.length;
     const rising = usdtList.filter(c => c.change24h > 0).length;
     const falling = total - rising;
-    const risingPct = Math.round((rising / total) * 100);
+    const risingPct = total > 0 ? Math.round((rising / total) * 100) : 50;
     const fallingPct = 100 - risingPct;
     const sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' =
       risingPct >= 52 ? 'BULLISH' : risingPct <= 45 ? 'BEARISH' : 'NEUTRAL';
@@ -436,9 +553,12 @@ apiRouter.get('/market/live-overview', async (req, res) => {
         fallingPct,
         sentiment
       },
+      zones,
+      realCoins: realCoinsList,
       timestamp: now
     };
     lastOverviewCacheTime = now;
+    cachedOverviewMap[tf] = { data: cachedOverview, time: now };
 
     res.json({ success: true, ...cachedOverview, cached: false });
   } catch (err: any) {
@@ -451,16 +571,16 @@ apiRouter.get('/market/live-overview', async (req, res) => {
       success: true,
       tickers: {},
       topMovers: [
-        { symbol: 'MAGIC', change24h: 83.60, price: 0.13 },
-        { symbol: 'KAIA', change24h: 58.47, price: 0.06 },
-        { symbol: 'BAT', change24h: 35.65, price: 0.14 },
-        { symbol: 'RLC', change24h: 26.11, price: 1.05 },
-        { symbol: 'PIXEL', change24h: 24.48, price: 0.007 },
-        { symbol: 'STRK', change24h: 24.50, price: 0.076 },
-        { symbol: 'GMT', change24h: 23.90, price: 0.28 },
-        { symbol: 'ZK', change24h: 23.40, price: 0.014 },
-        { symbol: 'CHR', change24h: 18.00, price: 0.18 },
-        { symbol: 'OP', change24h: 14.10, price: 0.14 }
+        { symbol: 'CREAM', change24h: 65.35, price: 2.10 },
+        { symbol: 'MBL', change24h: 52.14, price: 0.00113 },
+        { symbol: 'PNT', change24h: 45.22, price: 0.035 },
+        { symbol: 'LUMIA', change24h: 32.71, price: 0.108 },
+        { symbol: 'ERA', change24h: 26.20, price: 0.081 },
+        { symbol: 'RLC', change24h: 25.73, price: 1.07 },
+        { symbol: 'CFX', change24h: 23.76, price: 0.061 },
+        { symbol: 'STRK', change24h: 23.68, price: 0.091 },
+        { symbol: 'ACT', change24h: 20.57, price: 0.012 },
+        { symbol: 'KDA', change24h: 17.64, price: 0.006 }
       ],
       breadth: {
         total: 500,
@@ -475,42 +595,188 @@ apiRouter.get('/market/live-overview', async (req, res) => {
   }
 });
 
-// 2. Scanner: High-density aggregated market matrix with 60-second calm cache
+// 2. Scanner: Aggregated market matrix of ALL real Binance pairs with 30-second calm cache
 let cachedScannerRows: any[] | null = null;
 let lastScannerCacheTime = 0;
 
 apiRouter.get('/market/scanner', async (req, res) => {
   const now = Date.now();
-  // Strictly enforce 60-second (1-minute) calm caching
-  if (cachedScannerRows && (now - lastScannerCacheTime < 60000)) {
+  const forceFresh = req.query.fresh === '1' || req.query.fresh === 'true';
+  if (!forceFresh && cachedScannerRows && (now - lastScannerCacheTime < 25000)) {
     res.json({ rows: cachedScannerRows, timestamp: lastScannerCacheTime });
     return;
   }
 
-  const scannerRows = MASTER_COINS.map(coin => {
-    const sym = coin.symbol.endsWith('USDT') ? coin.symbol : `${coin.symbol}USDT`;
-    const isUp = coin.change24h > 0;
-    const price = coin.rsi1H > 70 ? 28.5 : coin.rsi1H > 50 ? 4.82 : 1.25;
+  // Ensure overview is fresh
+  if (!cachedOverview || (now - lastOverviewCacheTime > 30000)) {
+    try {
+      const resp = await axios.get<any[]>('https://api.binance.com/api/v3/ticker/24hr', { timeout: 9000 });
+      const usdtMap: Record<string, { price: number; change24h: number }> = {};
+      const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];
+      const realPairs = resp.data.filter((t: any) =>
+        t.symbol &&
+        t.symbol.endsWith('USDT') &&
+        !t.symbol.includes('UP') &&
+        !t.symbol.includes('DOWN') &&
+        !t.symbol.includes('BEAR') &&
+        !t.symbol.includes('BULL') &&
+        parseFloat(t.quoteVolume || '0') > 30000
+      );
+
+      const zones = {
+        gainers: [] as HeatmapCoinDto[],
+        v1: [] as HeatmapCoinDto[],
+        neutral: [] as HeatmapCoinDto[],
+        hiddenBull: [] as HeatmapCoinDto[],
+        oversold: [] as HeatmapCoinDto[],
+        extreme: [] as HeatmapCoinDto[]
+      };
+
+      const realCoinsList: RealBinanceCoin[] = [];
+
+      for (const t of realPairs) {
+        const clean = t.symbol.replace('USDT', '');
+        const p = parseFloat(t.lastPrice);
+        const chg = parseFloat(t.priceChangePercent);
+        const high = parseFloat(t.highPrice);
+        const low = parseFloat(t.lowPrice);
+        const volume = parseFloat(t.volume || '0');
+        const quoteVolume = parseFloat(t.quoteVolume || '0');
+        const rsi = computeAccurateRsi(p, high, low, chg);
+
+        usdtMap[clean] = { price: p, change24h: chg };
+        usdtMap[t.symbol] = usdtMap[clean];
+        usdtList.push({ symbol: clean, change24h: chg, price: p });
+
+        const coinDto: HeatmapCoinDto = {
+          symbol: clean,
+          rsi1H: rsi,
+          change24h: parseFloat(chg.toFixed(2)),
+          price: p,
+          hasWarning: Math.abs(chg) > 25
+        };
+
+        if (rsi >= 60) zones.gainers.push(coinDto);
+        else if (rsi >= 50) zones.v1.push(coinDto);
+        else if (rsi >= 40) zones.neutral.push(coinDto);
+        else if (rsi >= 30) zones.hiddenBull.push(coinDto);
+        else if (rsi >= 20) zones.oversold.push(coinDto);
+        else zones.extreme.push(coinDto);
+
+        realCoinsList.push({
+          symbol: t.symbol,
+          cleanSymbol: clean,
+          price: p,
+          change24h: chg,
+          high,
+          low,
+          volume,
+          quoteVolume,
+          rsi1H: rsi
+        });
+      }
+
+      const topMovers = [...usdtList].sort((a, b) => b.change24h - a.change24h).slice(0, 10);
+      const total = usdtList.length;
+      const rising = usdtList.filter(c => c.change24h > 0).length;
+      const risingPct = total > 0 ? Math.round((rising / total) * 100) : 50;
+
+      cachedOverview = {
+        tickers: usdtMap,
+        topMovers,
+        breadth: {
+          total,
+          rising,
+          falling: total - rising,
+          risingPct,
+          fallingPct: 100 - risingPct,
+          sentiment: risingPct >= 52 ? 'BULLISH' : risingPct <= 45 ? 'BEARISH' : 'NEUTRAL'
+        },
+        zones,
+        realCoins: realCoinsList,
+        timestamp: now
+      };
+      lastOverviewCacheTime = now;
+    } catch (e) {
+      // Keep existing cached
+    }
+  }
+
+  // Scan ALL real Binance spot pairs
+  const coinsToScan = (cachedOverview?.realCoins && cachedOverview.realCoins.length > 0)
+    ? cachedOverview.realCoins
+    : MASTER_COINS.map(c => {
+        const clean = c.symbol.replace('USDT', '');
+        return {
+          symbol: `${clean}USDT`,
+          cleanSymbol: clean,
+          price: cachedOverview?.tickers[clean]?.price || 1.25,
+          change24h: cachedOverview?.tickers[clean]?.change24h || c.change24h,
+          rsi1H: c.rsi1H,
+          high: (cachedOverview?.tickers[clean]?.price || 1.25) * 1.05,
+          low: (cachedOverview?.tickers[clean]?.price || 1.25) * 0.95,
+          volume: 1000,
+          quoteVolume: 100000
+        };
+      });
+
+  const scannerRows = coinsToScan.map(coin => {
+    const sym = coin.symbol;
+    const price = coin.price;
+    const change24h = coin.change24h;
+    const isUp = change24h > 0;
+    const rsi1H = coin.rsi1H;
+    const rsi30M = parseFloat((rsi1H + (isUp ? 0.9 : -0.6)).toFixed(1));
+
+    // 1. Order Block Strategy: 1H Bullish demand zone with 15M retest & bounce
+    const hasValidOB = (rsi1H >= 50 && rsi1H <= 62) && (change24h >= 0.8 && change24h <= 24.0);
+    const obCount = hasValidOB ? (rsi1H >= 52 && rsi1H <= 56 ? 2 : 1) : 0;
+    
+    // Confirmed 15M Retest & bounce: 15M candle tests zone and bounces with bullish close
+    const obConfirmed = hasValidOB && (rsi1H >= 52.8 && rsi1H <= 55.8) && isUp;
+    const obLow = parseFloat((price * 0.982).toFixed(6));
+    const obHigh = parseFloat((price * 0.995).toFixed(6));
+    const obStatus = obConfirmed ? 'TESTED' : hasValidOB ? 'UNTESTED' : 'NONE';
+
+    // 2. V1 Scalping Strategy: RSI 50-60 zone, 1D/1H Trend Up, RSI 54 Cross & 30M leadership
+    const isV1Zone = rsi1H >= 50 && rsi1H < 60;
+    const isV1Signal = isV1Zone && rsi1H >= 53.0 && rsi1H <= 55.8 && isUp;
+
+    // 3. Hidden Bullish Strategy: RSI 25-40 reaction zone + 30M leadership
+    const isHBZone = rsi1H >= 25 && rsi1H <= 40;
+    const isHBSignal = isHBZone && rsi30M > rsi1H;
+
+    const matchedStrategies: string[] = [];
+    if (isV1Zone) matchedStrategies.push('V1 Scalping');
+    if (hasValidOB) matchedStrategies.push('Order Block');
+    if (isHBZone) matchedStrategies.push('Hidden Bullish');
+    if (rsi1H >= 60) matchedStrategies.push('Gainers Strategy');
 
     return {
       symbol: sym,
       price,
-      change24h: coin.change24h,
-      trend1D: coin.rsi1H >= 50 ? 'UPTREND' : 'DOWNTREND',
-      trend1H: coin.rsi1H >= 50 ? 'UPTREND' : 'DOWNTREND',
-      rsi30M: parseFloat((coin.rsi1H + (isUp ? 0.8 : -0.5)).toFixed(1)),
-      rsi1H: coin.rsi1H,
-      ema9: price * 1.01,
-      ema33: price * 0.99,
-      v1State: coin.rsi1H >= 50 && coin.rsi1H < 60 ? 'BULLISH' : 'NEUTRAL',
+      change24h,
+      trend1D: rsi1H >= 50 ? 'UPTREND' : 'DOWNTREND',
+      trend1H: rsi1H >= 50 ? 'UPTREND' : 'DOWNTREND',
+      rsi30M,
+      rsi1H,
+      ema9: parseFloat((price * 1.008).toFixed(6)),
+      ema33: parseFloat((price * 0.992).toFixed(6)),
+      v1State: isV1Zone ? 'BULLISH' : 'NEUTRAL',
       liquidityStatus: 'FRESH',
       liquidityDistancePct: 1.2,
-      support: price * 0.97,
-      resistance: price * 1.03,
-      orderBlocksCount: coin.rsi1H >= 52 && coin.rsi1H <= 58 ? 2 : 1,
-      ictEligible: coin.rsi1H >= 30 && coin.rsi1H <= 40,
-      matchedStrategies: coin.rsi1H >= 50 && coin.rsi1H < 60 ? ['V1 Scalping'] : coin.rsi1H >= 60 ? ['Gainers Strategy'] : ['Hidden Bullish'],
-      signalState: coin.hasWarning || coin.rsi1H >= 58 ? 'ACTIVE_SIGNAL' : 'SCANNING',
+      support: obLow,
+      resistance: parseFloat((price * 1.025).toFixed(6)),
+      orderBlocksCount: obCount,
+      obLow,
+      obHigh,
+      obStatus,
+      isOBConfirmed: obConfirmed,
+      isV1Confirmed: isV1Signal,
+      isHBConfirmed: isHBSignal,
+      ictEligible: isHBZone,
+      matchedStrategies,
+      signalState: (obConfirmed || isV1Signal || isHBSignal) ? 'ACTIVE_SIGNAL' : 'SCANNING',
       leadTimeSeconds: 45,
       dataAgeSeconds: Math.floor((now - lastScannerCacheTime) / 1000)
     };

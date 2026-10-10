@@ -20,10 +20,11 @@ import { Agents } from './pages/Agents.js';
 import { CommandCenter } from './pages/CommandCenter.js';
 import { Admin } from './pages/Admin.js';
 import { HiddenBullish } from './pages/HiddenBullish.js';
+import { Health } from './pages/Health.js';
 import { api, getAuthToken, UserProfile, wsManager } from './services/api.js';
 
 export const App: React.FC = () => {
-  const [currentRoute, setCurrentRoute] = useState('v1');
+  const [currentRoute, setCurrentRoute] = useState('dashboard');
   const [tradingMode, setTradingMode] = useState<'ANALYSIS' | 'PAPER' | 'LIVE'>('ANALYSIS');
   const [isEmergencyHalted, setIsEmergencyHalted] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -75,7 +76,10 @@ export const App: React.FC = () => {
   };
 
   const renderContent = () => {
-    if (currentRoute === 'v1' || currentRoute === 'dashboard') {
+    if (currentRoute === 'dashboard') {
+      return <Dashboard navigate={setCurrentRoute} />;
+    }
+    if (currentRoute === 'v1') {
       return <V1Scalping navigate={setCurrentRoute} />;
     }
     if (currentRoute === 'hiddenBullish') {
@@ -84,13 +88,55 @@ export const App: React.FC = () => {
     if (currentRoute === 'orderBlock') {
       return <OrderBlock navigate={setCurrentRoute} />;
     }
+    if (currentRoute === 'admin') {
+      return <Admin />;
+    }
+    if (currentRoute === 'scanner') {
+      return <Scanner navigate={setCurrentRoute} />;
+    }
+    if (currentRoute === 'signals') {
+      return <Signals navigate={setCurrentRoute} />;
+    }
+    if (currentRoute === 'paper-trading') {
+      return <PaperTrading />;
+    }
+    if (currentRoute === 'live-trading') {
+      return <LiveTrading onModeChange={handleModeChange} />;
+    }
+    if (currentRoute === 'agents') {
+      return <Agents />;
+    }
+    if (currentRoute === 'command-center') {
+      return <CommandCenter navigate={setCurrentRoute} />;
+    }
+    if (currentRoute === 'backtests') {
+      return <Backtests />;
+    }
+    if (currentRoute === 'replay') {
+      return <Replay />;
+    }
+    if (currentRoute === 'journal') {
+      return <Journal />;
+    }
+    if (currentRoute === 'health') {
+      return <Health />;
+    }
+    if (currentRoute === 'user-portal') {
+      return <UserPortal currentUser={currentUser} onOpenAuth={() => setIsAuthModalOpen(true)} />;
+    }
+    if (currentRoute === 'risk-watch') {
+      return <BinanceRiskWatch navigate={setCurrentRoute} />;
+    }
+    if (currentRoute === 'ema-crossover') {
+      return <EmaCrossover navigate={setCurrentRoute} />;
+    }
 
     // Fallback if navigating to coin detail or other preserved page
     if (currentRoute.startsWith('coin/')) {
       return <CoinDetail symbol={currentRoute.replace('coin/', '')} navigate={setCurrentRoute} />;
     }
 
-    return <V1Scalping navigate={setCurrentRoute} />;
+    return <Dashboard navigate={setCurrentRoute} />;
   };
 
   return (
@@ -119,6 +165,11 @@ export const App: React.FC = () => {
           setCurrentUser(user);
           setCurrentRoute('user-portal');
         }}
+      />
+
+      <EnterpriseDrawer
+        currentRoute={currentRoute}
+        navigate={setCurrentRoute}
       />
     </div>
   );

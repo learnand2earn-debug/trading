@@ -89,11 +89,11 @@ export const TopNav: React.FC<TopNavProps> = ({
 
   return (
     <>
-      {/* Exact ScalpPro Top Navigation */}
+      {/* Top Navigation */}
       <nav className="topnav">
         <div className="nav-left">
-          <span className="nav-logo" onClick={() => navigate('v1')} style={{ cursor: 'pointer' }}>
-            📈 ScalpPro <span className="version">Lite v1.2.6</span>
+          <span className="nav-logo" onClick={() => navigate('dashboard')} style={{ cursor: 'pointer' }}>
+            📈 Trading with Dawood
           </span>
           <div className="conn-status">
             <span className="conn-dot on" id="connDot"></span>
@@ -141,8 +141,15 @@ export const TopNav: React.FC<TopNavProps> = ({
         </div>
       </nav>
 
-      {/* Clean ScalpPro Tab Bar — Only V1, Hidden Bullish, and Order Block */}
+      {/* Trading with Dawood Tab Bar — 1st Dashboard, then V1, Hidden Bullish, Order Block, Admin Panel */}
       <div className="tab-bar">
+        <button
+          className={`tab ${currentRoute === 'dashboard' ? 'active' : ''}`}
+          data-tab="dashboard"
+          onClick={() => navigate('dashboard')}
+        >
+          📊 Dashboard
+        </button>
         <button
           className={`tab ${currentRoute === 'v1' ? 'active' : ''}`}
           data-tab="v1"
@@ -163,6 +170,13 @@ export const TopNav: React.FC<TopNavProps> = ({
           onClick={() => navigate('orderBlock')}
         >
           🟩 Order Block
+        </button>
+        <button
+          className={`tab ${currentRoute === 'admin' ? 'active' : ''}`}
+          data-tab="admin"
+          onClick={() => navigate('admin')}
+        >
+          ⚙️ Admin Panel
         </button>
       </div>
     </>
