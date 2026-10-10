@@ -1,0 +1,36 @@
+{
+  "name": "crypto-trading-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Production-grade Crypto Trading Automation, Strategy Scanner, Backtesting & Agent Platform",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "tsx ../tests/runner.ts",
+    "test:api": "tsx ../tests/api.test.ts",
+    "test:all": "tsx ../tests/runner.ts && tsx ../tests/api.test.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.14",
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pg": "^8.13.1",
+    "uuid": "^11.0.5",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.7",
+    "@types/pg": "^8.11.11",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.5.14",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

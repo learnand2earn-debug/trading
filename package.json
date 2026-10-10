@@ -1,0 +1,13 @@
+{
+  "name": "crypto-trading-automation-platform",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "test": "npm --prefix backend run test:all"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
