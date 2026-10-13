@@ -579,3 +579,20 @@ CREATE TABLE IF NOT EXISTS data_quality_events (
     details JSONB,
     detected_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS licenses (
+    id TEXT PRIMARY KEY,
+    license_key TEXT UNIQUE NOT NULL,
+    assigned_username TEXT,
+    assigned_user_id TEXT,
+    note TEXT,
+    duration_days INTEGER NOT NULL DEFAULT 30,
+    status TEXT NOT NULL DEFAULT 'active',
+    active_session_id TEXT,
+    active_device_info TEXT,
+    last_active_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(license_key);
+

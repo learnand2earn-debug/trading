@@ -8,6 +8,8 @@ export interface AuthUser {
   username: string;
   email: string;
   role: 'ADMIN' | 'USER';
+  licenseKey?: string;
+  sessionId?: string;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -53,6 +55,8 @@ export function generateToken(user: AuthUser, expiresInHours = 72): string {
       username: user.username,
       email: user.email,
       role: user.role,
+      licenseKey: user.licenseKey,
+      sessionId: user.sessionId,
       iat: now,
       exp: now + expiresInHours * 3600
     })
@@ -92,7 +96,9 @@ export function verifyToken(token: string): AuthUser | null {
       id: decoded.id,
       username: decoded.username,
       email: decoded.email,
-      role: decoded.role
+      role: decoded.role,
+      licenseKey: decoded.licenseKey,
+      sessionId: decoded.sessionId
     };
   } catch (err) {
     return null;

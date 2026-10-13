@@ -2,11 +2,15 @@ import React, { useEffect, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
+  Copy,
   Key,
+  KeyRound,
   Plus,
+  RotateCcw,
   Save,
   Settings,
   ShieldAlert,
+  ShieldCheck,
   Sliders,
   Trash2,
   UserPlus,
@@ -14,12 +18,21 @@ import {
   Wrench,
   X
 } from 'lucide-react';
-import { api, UserProfile } from '../services/api.js';
+import { api, UserProfile, LicenseInfo } from '../services/api.js';
 
 export const Admin: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'STRATEGIES' | 'RISK' | 'RULES' | 'USERS' | 'AUDIT'>('STRATEGIES');
+  const [activeTab, setActiveTab] = useState<'LICENSES' | 'STRATEGIES' | 'RISK' | 'RULES' | 'USERS' | 'AUDIT'>('LICENSES');
   const [riskConfig, setRiskConfig] = useState<any>(null);
   const [saveMessage, setSaveMessage] = useState('');
+
+  // ScalpPro License Management State
+  const [licenses, setLicenses] = useState<LicenseInfo[]>([]);
+  const [loadingLicenses, setLoadingLicenses] = useState(false);
+  const [genDurationDays, setGenDurationDays] = useState(30);
+  const [genNote, setGenNote] = useState('');
+  const [genCustomKey, setGenCustomKey] = useState('');
+  const [licenseMsg, setLicenseMsg] = useState('');
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // User Management State
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -33,13 +46,97 @@ export const Admin: React.FC = () => {
 
   useEffect(() => {
     loadRisk();
+    loadLicenses();
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'USERS') {
+    if (activeTab === 'LICENSES') {
+      loadLicenses();
+    } else if (activeTab === 'USERS') {
       loadUsers();
     }
   }, [activeTab]);
+
+  const loadLicenses = async () => {
+    setLoadingLicenses(true);
+    try {
+      const res = await api.getLicenses();
+      if (res.success) {
+        setLicenses(res.licenses || []);
+      }
+    } catch (e: any) {
+      setLicenseMsg(`Failed to load licenses: ${e.message}`);
+    } finally {
+      setLoadingLicenses(false);
+    }
+  };
+
+  const handleGenerateLicense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLicenseMsg('');
+    try {
+      const res = await api.createLicense({
+        durationDays: genDurationDays,
+        note: genNote.trim() || undefined,
+        customKey: genCustomKey.trim() || undefined
+      });
+      if (res.success && res.license) {
+        setLicenseMsg(`✅ License key generated: ${res.license.license_key} (${res.license.duration_days} days)`);
+        setGenCustomKey('');
+        setGenNote('');
+        await loadLicenses();
+      } else {
+        setLicenseMsg(`❌ ${res.error || 'Failed to generate license'}`);
+      }
+    } catch (e: any) {
+      setLicenseMsg(`❌ ${e.message}`);
+    }
+  };
+
+  const handleResetSession = async (lic: LicenseInfo) => {
+    try {
+      const res = await api.resetLicenseSession(lic.id);
+      if (res.success) {
+        setLicenseMsg(`⚡ Session reset for ${lic.license_key}. Any connected device was disconnected.`);
+        await loadLicenses();
+      }
+    } catch (e: any) {
+      setLicenseMsg(`❌ Error: ${e.message}`);
+    }
+  };
+
+  const handleRevokeLicense = async (lic: LicenseInfo) => {
+    if (!confirm(`Are you sure you want to revoke license ${lic.license_key}?`)) return;
+    try {
+      const res = await api.revokeLicense(lic.id);
+      if (res.success) {
+        setLicenseMsg(`🚫 License ${lic.license_key} has been revoked.`);
+        await loadLicenses();
+      }
+    } catch (e: any) {
+      setLicenseMsg(`❌ Error: ${e.message}`);
+    }
+  };
+
+  const handleDeleteLicense = async (lic: LicenseInfo) => {
+    if (!confirm(`Permanently delete license ${lic.license_key}?`)) return;
+    try {
+      const res = await api.deleteLicense(lic.id);
+      if (res.success) {
+        setLicenseMsg(`🗑️ License ${lic.license_key} deleted.`);
+        await loadLicenses();
+      }
+    } catch (e: any) {
+      setLicenseMsg(`❌ Error: ${e.message}`);
+    }
+  };
+
+  const handleCopyKey = (key: string) => {
+    navigator.clipboard.writeText(key);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
 
   const loadRisk = async () => {
     try {
@@ -145,22 +242,262 @@ export const Admin: React.FC = () => {
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center gap-1.5">
-          {(['STRATEGIES', 'RISK', 'RULES', 'USERS', 'AUDIT'] as const).map(tab => (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(['LICENSES', 'STRATEGIES', 'RISK', 'RULES', 'USERS', 'AUDIT'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-3 py-1.5 rounded font-bold transition text-[11px] ${
+              className={`px-3 py-1.5 rounded font-bold transition text-[11px] flex items-center gap-1 ${
                 activeTab === tab
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-[#0e121a] text-gray-400 border border-[#252f44]'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'bg-[#0e121a] text-gray-400 border border-[#252f44] hover:text-white'
               }`}
             >
-              {tab === 'USERS' ? 'USERS & ACCESS' : tab}
+              {tab === 'LICENSES' ? '🔑 LICENSES' : tab === 'USERS' ? 'USERS & ACCESS' : tab}
             </button>
           ))}
         </div>
       </div>
+
+      {/* Tab: ScalpPro License Management & Single-Device Control */}
+      {activeTab === 'LICENSES' && (
+        <div className="space-y-4">
+          {/* Top Banner & Generation Form */}
+          <div className="bg-[#121824] border border-[#232f44] rounded-xl p-5 shadow-xl">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-[#232f44]">
+              <div>
+                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-emerald-400" />
+                  GENERATE SCALPPRO ACCESS LICENSE
+                </h2>
+                <p className="text-[11px] text-gray-400">
+                  Generate customer licenses. Enforces single-device concurrent usage: if logged in on a second device, the previous device is immediately logged out.
+                </p>
+              </div>
+              <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full">
+                Single-Device Protection Active
+              </span>
+            </div>
+
+            {licenseMsg && (
+              <div className="mb-4 p-3 rounded-lg bg-[#0e241b] border border-emerald-500/40 text-emerald-300 text-xs flex justify-between items-center">
+                <span>{licenseMsg}</span>
+                <button onClick={() => setLicenseMsg('')} className="text-gray-400 hover:text-white">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleGenerateLicense} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              <div className="md:col-span-3">
+                <label className="text-gray-400 text-[10px] uppercase font-bold block mb-1">
+                  License Duration
+                </label>
+                <select
+                  value={genDurationDays}
+                  onChange={(e) => setGenDurationDays(Number(e.target.value))}
+                  className="w-full bg-[#0b0e14] border border-[#232b3e] focus:border-emerald-500 rounded p-2 text-white font-mono text-xs focus:outline-none"
+                >
+                  <option value={7}>7 Days (Trial)</option>
+                  <option value={30}>30 Days (1 Month)</option>
+                  <option value={90}>90 Days (3 Months)</option>
+                  <option value={180}>180 Days (6 Months)</option>
+                  <option value={365}>365 Days (1 Year VIP)</option>
+                  <option value={3650}>Lifetime VIP Access (10 Years)</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-4">
+                <label className="text-gray-400 text-[10px] uppercase font-bold block mb-1">
+                  Client Name / Note (e.g. WhatsApp Client)
+                </label>
+                <input
+                  type="text"
+                  value={genNote}
+                  onChange={(e) => setGenNote(e.target.value)}
+                  placeholder="e.g. WhatsApp Client (+923164404787)"
+                  className="w-full bg-[#0b0e14] border border-[#232b3e] focus:border-emerald-500 rounded p-2 text-white font-mono text-xs focus:outline-none"
+                />
+              </div>
+
+              <div className="md:col-span-3">
+                <label className="text-gray-400 text-[10px] uppercase font-bold block mb-1">
+                  Custom Key (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={genCustomKey}
+                  onChange={(e) => setGenCustomKey(e.target.value.toUpperCase())}
+                  placeholder="Auto-generate if empty"
+                  className="w-full bg-[#0b0e14] border border-[#232b3e] focus:border-emerald-500 rounded p-2 text-white font-mono text-xs focus:outline-none uppercase"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <button
+                  type="submit"
+                  disabled={loadingLicenses}
+                  className="w-full py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-black font-extrabold text-xs shadow-[0_0_15px_rgba(16,185,129,0.3)] transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Generate Key</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Licenses Stats Row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="p-3 bg-[#121824] border border-[#232b3e] rounded-lg">
+              <span className="text-[10px] text-gray-500 uppercase font-bold">Total Issued Licenses</span>
+              <div className="text-lg font-bold text-white">{licenses.length}</div>
+            </div>
+            <div className="p-3 bg-[#121824] border border-[#232b3e] rounded-lg">
+              <span className="text-[10px] text-gray-500 uppercase font-bold">Active & Valid</span>
+              <div className="text-lg font-bold text-emerald-400">
+                {licenses.filter(l => l.status === 'active' && !l.isExpired).length}
+              </div>
+            </div>
+            <div className="p-3 bg-[#121824] border border-[#232b3e] rounded-lg">
+              <span className="text-[10px] text-gray-500 uppercase font-bold">Live Devices Online</span>
+              <div className="text-lg font-bold text-cyan-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                {licenses.filter(l => l.isOnline).length}
+              </div>
+            </div>
+            <div className="p-3 bg-[#121824] border border-[#232b3e] rounded-lg">
+              <span className="text-[10px] text-gray-500 uppercase font-bold">Expired / Revoked</span>
+              <div className="text-lg font-bold text-rose-400">
+                {licenses.filter(l => l.status !== 'active' || l.isExpired).length}
+              </div>
+            </div>
+          </div>
+
+          {/* Licenses Table */}
+          <div className="bg-[#121824] border border-[#232b3e] rounded-lg overflow-hidden">
+            <div className="p-3 border-b border-[#232b3e] flex justify-between items-center">
+              <span className="font-bold text-white text-xs">ALL ISSUED SCALPPRO LICENSES</span>
+              <button
+                onClick={loadLicenses}
+                className="text-[10px] text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" /> Refresh List
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-[#232b3e] bg-[#0c1017] text-[10px] text-gray-400 uppercase">
+                    <th className="p-3">License Key</th>
+                    <th className="p-3">Client / Note</th>
+                    <th className="p-3">Assigned User</th>
+                    <th className="p-3">Duration & Expiry</th>
+                    <th className="p-3">Device State</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#1e2535] text-xs">
+                  {licenses.map(lic => (
+                    <tr key={lic.id} className="hover:bg-[#161d2b] transition">
+                      <td className="p-3 font-mono font-bold text-white">
+                        <div className="flex items-center gap-2">
+                          <span>{lic.license_key}</span>
+                          <button
+                            onClick={() => handleCopyKey(lic.license_key)}
+                            className="p-1 rounded bg-[#1c2436] hover:bg-emerald-500/20 text-gray-400 hover:text-emerald-400 transition cursor-pointer"
+                            title="Copy License Key"
+                          >
+                            {copiedKey === lic.license_key ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="p-3 text-gray-300 font-medium">
+                        {lic.note || 'ScalpPro Trader'}
+                      </td>
+                      <td className="p-3 font-mono text-cyan-300">
+                        {lic.assigned_username || (
+                          <span className="text-gray-500 italic">Unbound (Any user can activate)</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-gray-400">
+                        <div>{lic.duration_days} Days</div>
+                        <div className="text-[10px] text-gray-500">
+                          {lic.expires_at ? new Date(lic.expires_at).toLocaleDateString() : 'Starts on first login'}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        {lic.isOnline ? (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            1 Device Online
+                          </span>
+                        ) : lic.active_session_id ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-gray-800 text-gray-400">
+                            Session Active (Idle)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-gray-600">No device connected</span>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          lic.status === 'active' && !lic.isExpired
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                            : 'bg-red-500/20 text-red-400 border border-red-500/40'
+                        }`}>
+                          {lic.isExpired ? 'EXPIRED' : lic.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {lic.active_session_id && (
+                            <button
+                              onClick={() => handleResetSession(lic)}
+                              className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-bold transition cursor-pointer"
+                              title="Force disconnect the currently connected device"
+                            >
+                              Kick Device
+                            </button>
+                          )}
+                          {lic.status === 'active' && (
+                            <button
+                              onClick={() => handleRevokeLicense(lic)}
+                              className="px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] font-bold transition cursor-pointer"
+                            >
+                              Revoke
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteLicense(lic)}
+                            className="p-1 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition cursor-pointer"
+                            title="Delete License"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {licenses.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="p-6 text-center text-gray-500">
+                        No licenses generated yet. Use the form above to issue your first license key.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* Tab 1: Strategies & Ambiguous Rules Selector */}
       {activeTab === 'STRATEGIES' && (

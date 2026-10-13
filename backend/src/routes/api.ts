@@ -38,6 +38,8 @@ import {
   AuthenticatedRequest
 } from '../security/auth.js';
 import { MASTER_COINS } from '../market-data/masterCoins.js';
+import { v1ScannerService } from '../market-data/v1ScannerService.js';
+import { hiddenScannerService } from '../market-data/hiddenScannerService.js';
 
 export const apiRouter = Router();
 
@@ -45,42 +47,181 @@ export const apiRouter = Router();
 // AUTHENTICATION & MULTI-USER ACCESS MANAGEMENT
 // ============================================================
 
-// Login endpoint
+// Login endpoint with License Key and Single-Device Locking
 apiRouter.post('/auth/login', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, licenseKey } = req.body;
   if (!username || !password) {
     res.status(400).json({ error: 'Username and password are required' });
     return;
   }
 
+  const cleanUsername = String(username).trim();
+  const cleanPassword = String(password);
+  const cleanKey = licenseKey ? String(licenseKey).trim().toUpperCase() : '';
+
   const db = await getDb();
-  const userRes = await db.query(
-    'SELECT * FROM users WHERE username = $1 OR email = $1 LIMIT 1',
-    [username]
+
+  // Admin login check (Admin can leave license empty)
+  if (cleanUsername.toLowerCase() === 'admin') {
+    const adminRes = await db.query(
+      'SELECT * FROM users WHERE username = $1 LIMIT 1',
+      ['admin']
+    );
+
+    if (adminRes.rows.length === 0) {
+      res.status(401).json({ error: 'Admin account not found' });
+      return;
+    }
+
+    const adminUser = adminRes.rows[0];
+    const isValid = verifyPassword(cleanPassword, adminUser.password_hash);
+    if (!isValid) {
+      res.status(401).json({ error: 'Invalid admin credentials' });
+      return;
+    }
+
+    // Generate unique session id to enforce single-device
+    const sessionId = `sess_${uuidv4()}`;
+    await db.query('UPDATE users SET active_session_id = $1 WHERE id = $2', [sessionId, adminUser.id]);
+
+    const authUser: AuthUser = {
+      id: adminUser.id,
+      username: adminUser.username,
+      email: adminUser.email,
+      role: 'ADMIN',
+      sessionId
+    };
+    const token = generateToken(authUser);
+
+    res.json({
+      success: true,
+      token,
+      sessionId,
+      user: {
+        ...authUser,
+        status: adminUser.status
+      }
+    });
+    return;
+  }
+
+  // Non-admin users MUST have a valid license key
+  if (!cleanKey) {
+    res.status(400).json({
+      error: 'License Key is required to access ScalpPro. Contact WhatsApp: +923164404787 for access.'
+    });
+    return;
+  }
+
+  // Verify license key in database
+  const licRes = await db.query(
+    'SELECT * FROM licenses WHERE license_key = $1 LIMIT 1',
+    [cleanKey]
   );
 
-  if (userRes.rows.length === 0) {
-    res.status(401).json({ error: 'Invalid username or password' });
+  if (licRes.rows.length === 0) {
+    res.status(401).json({
+      error: 'Invalid License Key. Please check your key or contact WhatsApp: +923164404787.'
+    });
     return;
   }
 
-  const user = userRes.rows[0];
-  if (user.status === 'suspended') {
-    res.status(403).json({ error: 'Your account has been suspended. Please contact the administrator.' });
+  const license = licRes.rows[0];
+
+  if (license.status === 'revoked') {
+    res.status(403).json({
+      error: 'This license has been revoked by the administrator. Contact WhatsApp: +923164404787.'
+    });
     return;
   }
 
-  const isValid = verifyPassword(password, user.password_hash);
-  if (!isValid) {
-    res.status(401).json({ error: 'Invalid username or password' });
+  // Check expiration if expires_at is set
+  if (license.expires_at && new Date(license.expires_at).getTime() < Date.now()) {
+    await db.query("UPDATE licenses SET status = 'expired' WHERE id = $1", [license.id]);
+    res.status(403).json({
+      error: `This license expired on ${new Date(license.expires_at).toLocaleDateString()}. Contact WhatsApp: +923164404787 to renew.`
+    });
     return;
   }
+
+  // If license was previously bound to another user, restrict it
+  if (license.assigned_username && license.assigned_username.toLowerCase() !== cleanUsername.toLowerCase()) {
+    res.status(403).json({
+      error: `This license is already registered to user "${license.assigned_username}". Each user requires a separate license.`
+    });
+    return;
+  }
+
+  // Check if user exists
+  const userRes = await db.query(
+    'SELECT * FROM users WHERE username = $1 OR email = $1 LIMIT 1',
+    [cleanUsername]
+  );
+
+  let targetUser: any;
+
+  if (userRes.rows.length > 0) {
+    targetUser = userRes.rows[0];
+    if (targetUser.status === 'suspended') {
+      res.status(403).json({ error: 'Your account has been suspended. Please contact support.' });
+      return;
+    }
+
+    const isValid = verifyPassword(cleanPassword, targetUser.password_hash);
+    if (!isValid) {
+      res.status(401).json({ error: 'Invalid password for username.' });
+      return;
+    }
+  } else {
+    // Auto-create client user tied to this license
+    const newUserId = `usr-${uuidv4().slice(0, 8)}`;
+    const passwordHash = hashPassword(cleanPassword);
+    const userEmail = `${cleanUsername.toLowerCase()}@scalppro.io`;
+
+    await db.query(
+      `INSERT INTO users (id, username, email, password_hash, role, status)
+       VALUES ($1, $2, $3, $4, 'USER', 'active')`,
+      [newUserId, cleanUsername, userEmail, passwordHash]
+    );
+
+    targetUser = {
+      id: newUserId,
+      username: cleanUsername,
+      email: userEmail,
+      role: 'USER',
+      status: 'active'
+    };
+  }
+
+  // Single Device Enforcement:
+  // Generate brand new unique sessionId. Setting this in licenses table invalidates any previous device!
+  const sessionId = `sess_${uuidv4()}`;
+  const now = new Date();
+  const expiresAt = license.expires_at
+    ? new Date(license.expires_at).toISOString()
+    : new Date(now.getTime() + (license.duration_days || 30) * 86400000).toISOString();
+
+  await db.query(
+    `UPDATE licenses 
+     SET active_session_id = $1, 
+         assigned_username = $2, 
+         assigned_user_id = $3, 
+         last_active_at = CURRENT_TIMESTAMP, 
+         expires_at = $4, 
+         status = 'active'
+     WHERE id = $5`,
+    [sessionId, targetUser.username, targetUser.id, expiresAt, license.id]
+  );
+
+  await db.query('UPDATE users SET active_session_id = $1 WHERE id = $2', [sessionId, targetUser.id]);
 
   const authUser: AuthUser = {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    role: user.role === 'ADMIN' ? 'ADMIN' : 'USER'
+    id: targetUser.id,
+    username: targetUser.username,
+    email: targetUser.email,
+    role: 'USER',
+    licenseKey: cleanKey,
+    sessionId
   };
 
   const token = generateToken(authUser);
@@ -88,12 +229,101 @@ apiRouter.post('/auth/login', async (req, res) => {
   res.json({
     success: true,
     token,
+    sessionId,
+    licenseKey: cleanKey,
     user: {
       ...authUser,
-      status: user.status
+      status: targetUser.status
     }
   });
 });
+
+// Validate Session Heartbeat (Single Device Protection)
+apiRouter.get('/auth/validate-session', optionalAuth, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ valid: false, code: 'UNAUTHORIZED', error: 'Authentication required' });
+    return;
+  }
+
+  const clientSessionId = (req.headers['x-session-id'] as string) || req.user.sessionId;
+  const db = await getDb();
+
+  // If ADMIN user
+  if (req.user.role === 'ADMIN') {
+    const adminCheck = await db.query('SELECT active_session_id FROM users WHERE id = $1', [req.user.id]);
+    if (adminCheck.rows.length > 0 && adminCheck.rows[0].active_session_id) {
+      if (clientSessionId && adminCheck.rows[0].active_session_id !== clientSessionId) {
+        res.status(401).json({
+          valid: false,
+          code: 'SESSION_TERMINATED',
+          error: 'Your admin account was logged in from another device/browser.'
+        });
+        return;
+      }
+    }
+    res.json({ valid: true, role: 'ADMIN' });
+    return;
+  }
+
+  // If standard USER with License Key
+  const licKey = req.user.licenseKey;
+  let licRes: any;
+  if (licKey) {
+    licRes = await db.query('SELECT * FROM licenses WHERE license_key = $1 LIMIT 1', [licKey]);
+  } else {
+    licRes = await db.query('SELECT * FROM licenses WHERE assigned_username = $1 LIMIT 1', [req.user.username]);
+  }
+
+  if (licRes.rows.length === 0) {
+    res.status(401).json({
+      valid: false,
+      code: 'LICENSE_INVALID',
+      error: 'License record not found. Please log in again.'
+    });
+    return;
+  }
+
+  const lic = licRes.rows[0];
+
+  if (lic.status === 'revoked') {
+    res.status(401).json({
+      valid: false,
+      code: 'LICENSE_REVOKED',
+      error: 'Your license has been revoked by the administrator.'
+    });
+    return;
+  }
+
+  if (lic.expires_at && new Date(lic.expires_at).getTime() < Date.now()) {
+    res.status(401).json({
+      valid: false,
+      code: 'LICENSE_EXPIRED',
+      error: 'Your license has expired. Please renew your subscription.'
+    });
+    return;
+  }
+
+  // Single Device Check:
+  // If active_session_id in DB does not match clientSessionId, another device has logged in!
+  if (lic.active_session_id && clientSessionId && lic.active_session_id !== clientSessionId) {
+    res.status(401).json({
+      valid: false,
+      code: 'SESSION_TERMINATED',
+      error: 'Your license was logged in from another device or browser. Only 1 device is allowed at a time.'
+    });
+    return;
+  }
+
+  // Refresh heartbeat in database
+  await db.query('UPDATE licenses SET last_active_at = CURRENT_TIMESTAMP WHERE id = $1', [lic.id]);
+
+  res.json({
+    valid: true,
+    expiresAt: lic.expires_at,
+    licenseKey: lic.license_key
+  });
+});
+
 
 // Register endpoint
 apiRouter.post('/auth/register', async (req, res) => {
@@ -265,6 +495,108 @@ apiRouter.delete('/auth/users/:id', optionalAuth, requireAdmin, async (req: Auth
   await db.query('DELETE FROM users WHERE id = $1', [id]);
   res.json({ success: true, message: 'User deleted successfully' });
 });
+
+// ============================================================
+// ADMIN LICENSE MANAGEMENT (Generate, Revoke, Single-Device Reset)
+// ============================================================
+
+// List all licenses with live online presence
+apiRouter.get('/admin/licenses', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+  const db = await getDb();
+  const licRes = await db.query(`
+    SELECT 
+      id, 
+      license_key, 
+      assigned_username, 
+      assigned_user_id, 
+      note, 
+      duration_days, 
+      status, 
+      active_session_id, 
+      last_active_at, 
+      expires_at, 
+      created_at
+    FROM licenses
+    ORDER BY created_at DESC
+  `);
+
+  const now = Date.now();
+  const licenses = licRes.rows.map(lic => {
+    const lastActive = lic.last_active_at ? new Date(lic.last_active_at).getTime() : 0;
+    const isOnline = Boolean(lic.active_session_id && (now - lastActive < 45000));
+    const isExpired = lic.expires_at ? new Date(lic.expires_at).getTime() < now : false;
+
+    return {
+      ...lic,
+      isOnline,
+      isExpired: isExpired || lic.status === 'expired'
+    };
+  });
+
+  res.json({ success: true, licenses });
+});
+
+// Generate new license key
+apiRouter.post('/admin/licenses', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+  const { durationDays, note, customKey } = req.body;
+  const db = await getDb();
+
+  const randomChunk = () => Math.random().toString(36).substring(2, 6).toUpperCase();
+  const generatedKey = `SCALP-${randomChunk()}-${randomChunk()}-${randomChunk()}`;
+  const key = (customKey ? String(customKey).trim().toUpperCase() : generatedKey);
+
+  const exists = await db.query('SELECT id FROM licenses WHERE license_key = $1', [key]);
+  if (exists.rows.length > 0) {
+    res.status(409).json({ error: 'License key already exists. Try generating another.' });
+    return;
+  }
+
+  const days = parseInt(durationDays, 10) || 30;
+  const id = `lic-${uuidv4().slice(0, 8)}`;
+  const cleanNote = note ? String(note).trim() : 'ScalpPro Trader License';
+
+  await db.query(
+    `INSERT INTO licenses (id, license_key, note, duration_days, status, created_at)
+     VALUES ($1, $2, $3, $4, 'active', CURRENT_TIMESTAMP)`,
+    [id, key, cleanNote, days]
+  );
+
+  res.json({
+    success: true,
+    license: {
+      id,
+      license_key: key,
+      note: cleanNote,
+      duration_days: days,
+      status: 'active'
+    }
+  });
+});
+
+// Reset active session (Kick current device immediately)
+apiRouter.post('/admin/licenses/:id/reset-session', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const db = await getDb();
+  await db.query('UPDATE licenses SET active_session_id = NULL WHERE id = $1', [id]);
+  res.json({ success: true, message: 'Active session reset. Any connected device has been disconnected.' });
+});
+
+// Revoke license
+apiRouter.post('/admin/licenses/:id/revoke', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const db = await getDb();
+  await db.query("UPDATE licenses SET status = 'revoked', active_session_id = NULL WHERE id = $1", [id]);
+  res.json({ success: true, message: 'License revoked successfully.' });
+});
+
+// Delete license
+apiRouter.delete('/admin/licenses/:id', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const db = await getDb();
+  await db.query('DELETE FROM licenses WHERE id = $1', [id]);
+  res.json({ success: true, message: 'License deleted successfully.' });
+});
+
 
 // 1. Health
 apiRouter.get('/health', async (req, res) => {
@@ -786,6 +1118,44 @@ apiRouter.get('/market/scanner', async (req, res) => {
   lastScannerCacheTime = now;
 
   res.json({ rows: scannerRows, timestamp: now });
+});
+
+// 2b. V1 Scalping Live Scanner: 100% Accurate to Binance Spot Market
+apiRouter.get('/market/v1-scanner', async (req, res) => {
+  try {
+    const rsiMin = req.query.rsiMin ? parseFloat(req.query.rsiMin as string) : 50;
+    const rsiMax = req.query.rsiMax ? parseFloat(req.query.rsiMax as string) : 60;
+    const fresh = req.query.fresh === '1' || req.query.fresh === 'true';
+
+    const scanData = await v1ScannerService.scanV1Market({
+      rsiMin,
+      rsiMax,
+      fresh
+    });
+
+    res.json(scanData);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to scan V1 market', message: err.message });
+  }
+});
+
+// 2c. Hidden Bullish Live Scanner: 100% Accurate to Binance Spot Market (RSI 30-40, Consolidation & 30M Lead)
+apiRouter.get('/market/hidden-scanner', async (req, res) => {
+  try {
+    const rsiMin = req.query.rsiMin ? parseFloat(req.query.rsiMin as string) : 30;
+    const rsiMax = req.query.rsiMax ? parseFloat(req.query.rsiMax as string) : 40;
+    const fresh = req.query.fresh === '1' || req.query.fresh === 'true';
+
+    const scanData = await hiddenScannerService.scanHiddenMarket({
+      rsiMin,
+      rsiMax,
+      fresh
+    });
+
+    res.json(scanData);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to scan Hidden Bullish market', message: err.message });
+  }
 });
 
 // 3. Coin Detail: Multi-timeframe charts and 7 strategy breakdowns

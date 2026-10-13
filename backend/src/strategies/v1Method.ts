@@ -39,31 +39,31 @@ export function evaluateV1Method(
     reason: trend1DPassed ? '1D trend is UP' : `1D trend is ${trend1D.direction} (Source requires UP)`
   });
 
-  // Condition 2: 1H Trend UP or SIDEWAYS
+  // Condition 2: 1H Trend MUST be UP
   const trend1H = detectTrend(candles1H, 20);
-  const trend1HPassed = trend1H.direction === 'UPTREND' || trend1H.direction === 'SIDEWAYS';
+  const trend1HPassed = trend1H.direction === 'UPTREND';
   conditions.push({
-    name: '1H Trend State',
+    name: '1H Mandatory Uptrend',
     category: 'SOURCE_RULE',
     passed: trend1HPassed,
     actualValue: trend1H.direction,
-    requiredCondition: 'UPTREND or SIDEWAYS',
-    reason: `1H Trend is ${trend1H.direction}`
+    requiredCondition: 'UPTREND (Mandatory)',
+    reason: trend1HPassed ? '1H Trend is UP' : `1H Trend is ${trend1H.direction} (Required: UP)`
   });
 
-  // Condition 3: RSI crosses level 54 from below
+  // Condition 3: RSI 1H in 50-60 zone & crossing above 50/54
   const rsi1H = calculateRSI(candles1H, 14);
+  const rsiInZone = rsi1H.current >= 50 && rsi1H.current <= 60;
   const rsiCrossed = isRSICrossingAbove(rsi1H.previous, rsi1H.current, config.rsiCrossLevel);
-  // Also support active crossing or fresh holding just above 54
-  const rsiAbove = rsi1H.current >= config.rsiCrossLevel && rsi1H.previous <= config.rsiCrossLevel + 1.5;
-  const rsiPassed = rsiCrossed || rsiAbove;
+  const rsiAbove = rsi1H.current >= config.rsiCrossLevel;
+  const rsiPassed = rsiInZone && (rsiCrossed || rsiAbove || rsi1H.current >= 50);
   conditions.push({
-    name: `RSI Cross Level ${config.rsiCrossLevel}`,
+    name: 'RSI 1H in 50-60 Zone',
     category: 'SOURCE_RULE',
     passed: rsiPassed,
-    actualValue: `Prev: ${rsi1H.previous} -> Curr: ${rsi1H.current}`,
-    requiredCondition: `Crosses ${config.rsiCrossLevel} upward (prev < ${config.rsiCrossLevel} and curr >= ${config.rsiCrossLevel})`,
-    reason: rsiPassed ? `RSI crossed ${config.rsiCrossLevel} upward` : `RSI did not cross ${config.rsiCrossLevel}`
+    actualValue: `Curr: ${rsi1H.current} (Prev: ${rsi1H.previous})`,
+    requiredCondition: 'RSI 1H between 50 and 60 (leading into breakout)',
+    reason: rsiPassed ? `1H RSI (${rsi1H.current}) is within 50-60 zone` : `1H RSI (${rsi1H.current}) is outside 50-60 zone`
   });
 
   // Condition 4: V1 Indicator State (Green or Transparent)
@@ -78,16 +78,18 @@ export function evaluateV1Method(
     reason: `V1 state is ${v1State.state} (Red is prohibited)`
   });
 
-  // Condition 5: 30M RSI Leadership
+  // Condition 5: 30M RSI Leadership (30M RSI > 1H RSI)
   const rsi30M = calculateRSI(candles30M, 14);
   const leadership = evaluate30MLeadership(rsi1H, rsi30M);
+  const isStrictlyAbove = rsi30M.current > rsi1H.current;
+  const leadershipPassed = leadership.leads || isStrictlyAbove;
   conditions.push({
     name: '30M RSI Leadership',
     category: 'SOURCE_RULE',
-    passed: leadership.leads,
+    passed: leadershipPassed,
     actualValue: `30M: ${rsi30M.current} vs 1H: ${rsi1H.current}`,
-    requiredCondition: '30M RSI positively leading 1H RSI',
-    reason: leadership.reason
+    requiredCondition: '30M RSI positively leading 1H RSI (higher by points above)',
+    reason: leadershipPassed ? `30M RSI (${rsi30M.current}) is leading 1H RSI (${rsi1H.current})` : `30M RSI does not lead 1H RSI`
   });
 
   const signalValid = conditions.every(c => c.passed);
@@ -96,10 +98,10 @@ export function evaluateV1Method(
   const explanation = `
 WHY THIS SIGNAL ${signalValid ? 'EXISTS' : 'IS REJECTED'}:
 1. 1D Trend: ${trend1D.direction} -> ${trend1DPassed ? 'PASS (Mandatory UP)' : 'FAIL'}
-2. 1H Trend: ${trend1H.direction} -> ${trend1HPassed ? 'PASS' : 'FAIL'}
-3. RSI Cross: ${rsi1H.previous} -> ${rsi1H.current} -> ${rsiPassed ? 'PASS' : 'FAIL'}
+2. 1H Trend: ${trend1H.direction} -> ${trend1HPassed ? 'PASS (Mandatory UP)' : 'FAIL'}
+3. RSI 1H Zone: ${rsi1H.current} -> ${rsiPassed ? 'PASS (50-60 Zone)' : 'FAIL'}
 4. V1 Indicator: ${v1State.state} -> ${v1Passed ? 'PASS' : 'FAIL (Red prohibited)'}
-5. 30M RSI Leadership: ${leadership.leads ? 'PASS' : 'FAIL'}
+5. 30M RSI Leadership: ${leadershipPassed ? 'PASS' : 'FAIL'} (30M: ${rsi30M.current} vs 1H: ${rsi1H.current})
 Final Decision: ${signalValid ? 'VALID SIGNAL (+1% Target)' : 'REJECTED'}
   `.trim();
 

@@ -1,6 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { api, ScannerRow } from '../services/api.js';
-import { TradingViewModal } from '../components/TradingViewModal.js';
+import { api, V1CandidateSignal, V1ActiveCoin } from '../services/api.js';
+
+// Open TradingView chart directly in browser tab for coin and timeframe
+const openDirectTradingView = (symbol: string, tf: string = '1H') => {
+  const clean = symbol.toUpperCase().replace('USDT', '');
+  const tfMap: Record<string, string> = {
+    '15M': '15',
+    '30M': '30',
+    '1H': '60',
+    '4H': '240',
+    '1D': 'D',
+    '1W': 'W'
+  };
+  const interval = tfMap[tf.toUpperCase()] || '60';
+  const url = `https://www.tradingview.com/chart/?symbol=BINANCE:${clean}USDT&interval=${interval}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+};
 
 // Clean Web Audio chime for signal alerts
 const playChime = () => {
@@ -11,8 +26,8 @@ const playChime = () => {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
-    osc.frequency.exponentialRampToValueAtTime(783.99, ctx.currentTime + 0.12); // G5
+    osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(783.99, ctx.currentTime + 0.12);
     gain.gain.setValueAtTime(0.12, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
     osc.connect(gain);
@@ -20,7 +35,7 @@ const playChime = () => {
     osc.start();
     osc.stop(ctx.currentTime + 0.35);
   } catch (e) {
-    // AudioContext blocked by browser policy until interaction
+    // browser audio policy
   }
 };
 
@@ -30,137 +45,116 @@ const formatPrice = (p: number | undefined): string => {
     return p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   if (p >= 1) {
-    return p.toFixed(2);
+    return p.toFixed(4);
   }
-  if (p >= 0.01) {
+  if (p >= 0.001) {
     return p.toFixed(4);
   }
   return p.toFixed(6);
 };
 
-export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = ({ navigate }) => {
+export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
-  const [rsiLevel, setRsiLevel] = useState<number>(54);
-  const [allowTransparent, setAllowTransparent] = useState(true);
-  const [signals, setSignals] = useState<ScannerRow[]>([]);
-  const [activeCoins, setActiveCoins] = useState<ScannerRow[]>([]);
+  const [rsiMin, setRsiMin] = useState<number>(50);
+  const [rsiMax, setRsiMax] = useState<number>(60);
+  const [scanIntervalMin, setScanIntervalMin] = useState<number>(5);
+  const [signals, setSignals] = useState<V1CandidateSignal[]>([]);
+  const [activeCoins, setActiveCoins] = useState<V1ActiveCoin[]>([]);
   const [logs, setLogs] = useState<{ time: string; msg: string }[]>([]);
-  const [statusLabel, setStatusLabel] = useState('Idle');
-  const [progressWidth, setProgressWidth] = useState('0%');
-  const [selectedChartCoin, setSelectedChartCoin] = useState<string | null>(null);
-  const [countdown, setCountdown] = useState<number>(30);
+  const [lastScanTime, setLastScanTime] = useState<string>('2:12:22 PM');
   const soundRef = useRef(soundOn);
 
   useEffect(() => {
     soundRef.current = soundOn;
   }, [soundOn]);
 
-  // Initial load: fetch V1 zone coins calmly
+  // Initial load
   useEffect(() => {
-    api.getScanner(true).then(data => {
-      const rows = data.rows || [];
-      const v1Matches = rows.filter(r => (r.rsi1H >= 50 && r.rsi1H < 60));
-      setActiveCoins(v1Matches);
-    }).catch(() => {});
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    setLastScanTime(timeStr);
+
+    api.getV1Scanner({ rsiMin, rsiMax, fresh: false })
+      .then(data => {
+        if (data && data.success) {
+          const sigs = data.signals || [];
+          setActiveCoins(data.activeCoins || []);
+          setSignals(sigs);
+          setLastScanTime(data.lastScanTimeStr || timeStr);
+
+          const initialLogs: { time: string; msg: string }[] = [
+            { time: timeStr, msg: `V1 done - ${sigs.length} new signals` }
+          ];
+          sigs.forEach(s => {
+            initialLogs.push({ time: timeStr, msg: `${s.symbol} - V1 Scalping Setup` });
+          });
+          setLogs(initialLogs);
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  // Strict 30-second calm countdown timer
-  useEffect(() => {
-    const cdInterval = setInterval(() => {
-      setCountdown(prev => (prev <= 1 ? 30 : prev - 1));
-    }, 1000);
-    return () => clearInterval(cdInterval);
-  }, []);
-
-  // Real-time scan routine for V1 Scalping
+  // Execution scan routine
   const executeScan = async () => {
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setStatusLabel(`Scanning Binance Spot for V1 Scalping (RSI ${rsiLevel} Cross & Smoothed HA)...`);
-    setProgressWidth('30%');
-
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
     try {
-      const data = await api.getScanner(true);
-      const rows = data.rows || [];
+      const data = await api.getV1Scanner({ rsiMin, rsiMax, fresh: true });
+      if (data && data.success) {
+        const newSignals = data.signals || [];
+        setSignals(newSignals);
+        setActiveCoins(data.activeCoins || []);
+        setLastScanTime(data.lastScanTimeStr || timeStr);
 
-      setProgressWidth('65%');
-      setStatusLabel('Checking 1D/1H Trend alignment & 30M RSI Leadership...');
-
-      // Active V1 Zone pairs (RSI 50 - 60)
-      const matched = rows.filter(r => (r.rsi1H >= 50 && r.rsi1H < 60));
-      setActiveCoins(matched);
-
-      // Confirmed V1 signals: RSI near/above threshold, positive 24h, 1D/1H Uptrend
-      const confirmedSigs = matched.filter(r => {
-        const rsiOk = r.rsi1H >= (rsiLevel - 1.5) && r.rsi1H <= (rsiLevel + 2.5);
-        const trendOk = r.trend1D === 'UPTREND' && (r.trend1H === 'UPTREND' || r.trend1H === 'SIDEWAYS');
-        const leadershipOk = r.rsi30M >= r.rsi1H;
-        return rsiOk && trendOk && leadershipOk && r.change24h > 0;
-      });
-
-      // Realistic high-probability set
-      const finalSignals = (confirmedSigs.length > 0 ? confirmedSigs : matched.filter(r => r.isV1Confirmed)).slice(0, 6);
-
-      setTimeout(() => {
-        setProgressWidth('100%');
-        setSignals(finalSignals);
-
-        if (finalSignals.length > 0 && soundRef.current) {
+        if (newSignals.length > 0 && soundRef.current) {
           playChime();
         }
 
-        setStatusLabel(`Active · Monitoring ${matched.length} V1 Zone pairs (1-min live cycle)`);
-        setLogs(prev => [
-          {
-            time: timeStr,
-            msg: `1-min refresh: Identified ${matched.length} V1 candidates (RSI 50-60), ${finalSignals.length} confirmed buy setups (RSI ${rsiLevel} cross & HA Green).`
-          },
-          ...prev.slice(0, 15)
-        ]);
+        const logEntries = [
+          { time: timeStr, msg: `V1 done - ${newSignals.length} new signals` }
+        ];
 
-        setTimeout(() => setProgressWidth('0%'), 1200);
-      }, 700);
+        newSignals.forEach(s => {
+          logEntries.push({
+            time: timeStr,
+            msg: `${s.symbol} - V1 Scalping Setup`
+          });
+        });
+
+        setLogs(prev => [...logEntries, ...prev.slice(0, 30)]);
+      }
     } catch (e) {
-      setProgressWidth('0%');
-      setStatusLabel('Active · Monitoring V1 Scalping pairs');
+      // Keep existing data
     }
   };
 
+  // Interval loop
   useEffect(() => {
     let timer: any;
     if (isScanning) {
       executeScan();
-      timer = setInterval(executeScan, 30000);
-    } else {
-      setStatusLabel('Idle');
-      setProgressWidth('0%');
+      const ms = Math.max(10, scanIntervalMin * 60) * 1000;
+      timer = setInterval(executeScan, Math.min(ms, 30000));
     }
 
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [isScanning, rsiLevel, allowTransparent]);
+  }, [isScanning, rsiMin, rsiMax, scanIntervalMin]);
 
   const handleStart = () => {
     setIsScanning(true);
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
     setLogs(prev => [
-      {
-        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        msg: `Scan started: Monitoring V1 Scalping setups with RSI ${rsiLevel} cross threshold.`
-      },
+      { time: timeStr, msg: `Scan started: Monitoring V1 Scalping setups (RSI ${rsiMin}-${rsiMax})` },
       ...prev
     ]);
   };
 
   const handleStop = () => {
     setIsScanning(false);
-    setStatusLabel('Idle');
-    setProgressWidth('0%');
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
     setLogs(prev => [
-      {
-        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        msg: 'V1 Scanner stopped.'
-      },
+      { time: timeStr, msg: 'V1 Scanner stopped.' },
       ...prev
     ]);
   };
@@ -168,257 +162,774 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = ({ nav
   const handleReset = () => {
     setIsScanning(false);
     setSignals([]);
-    setProgressWidth('0%');
-    setStatusLabel('Idle');
-    setCountdown(30);
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
     setLogs(prev => [
-      {
-        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        msg: 'V1 Scanner reset. Cleared signals.'
-      },
+      { time: timeStr, msg: 'V1 Scanner reset. Cleared signals.' },
+      ...prev
+    ]);
+  };
+
+  const handleScanNow = () => {
+    executeScan();
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    setLogs(prev => [
+      { time: timeStr, msg: '⚡ Fresh scan completed on Binance Spot market.' },
+      ...prev
+    ]);
+  };
+
+  const handleSave = () => {
+    executeScan();
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    setLogs(prev => [
+      { time: timeStr, msg: `Settings saved: RSI Min=${rsiMin}, RSI Max=${rsiMax}, Interval=${scanIntervalMin}m.` },
       ...prev
     ]);
   };
 
   return (
-    <div className="content">
-      <div className="tab-panel active" id="tab-v1">
-        <div className="method-layout">
-          {/* Main Left: Header, Scanbar, Signals */}
-          <div className="method-main">
-            <div className="method-header v1-header">
-              <div>
-                <span className="method-badge v1-badge">1H / 30M / 15M · RSI {rsiLevel} Cross</span>
-                <h2>V1 Scalping</h2>
-                <p>1D Mandatory Uptrend · 1H Trend UP/Sideways · RSI Crosses {rsiLevel} · Smoothed HA Green/Transparent · 30M Leadership</p>
-              </div>
-              <div className="method-btns">
-                <button className="btn-start" onClick={handleStart}>▶ Start</button>
-                <button className="btn-stop" onClick={handleStop}>⏹ Stop</button>
-                <button className="btn-reset" onClick={handleReset}>↺ Reset</button>
-              </div>
-            </div>
-
-            <div className="scanbar-wrap">
-              <div
-                className="scanbar"
-                id="sb-v1"
-                style={{ width: progressWidth, background: '#39D353', transition: 'width 0.4s ease' }}
-              ></div>
-              <span id="sblabel-v1" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>{statusLabel}</span>
-                <span style={{ color: '#8b949e', fontSize: '10px' }}>
-                  · Next 30s update: <strong style={{ color: '#39D353' }}>{countdown}s</strong>
-                </span>
+    <div style={{ padding: '16px 20px', background: '#070a0f', minHeight: 'calc(100vh - 50px)', color: '#e6edf3', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+      {/* 1. Header Card Container with Integrated Footer */}
+      <div
+        style={{
+          background: '#0d1117',
+          border: '1px solid #1e2638',
+          borderRadius: '8px',
+          marginBottom: '14px',
+          overflow: 'hidden'
+        }}
+      >
+        {/* Upper Header Row */}
+        <div
+          style={{
+            padding: '16px 20px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '14px'
+          }}
+        >
+          <div>
+            <div style={{ marginBottom: '5px' }}>
+              <span
+                style={{
+                  display: 'inline-block',
+                  background: 'rgba(57, 211, 83, 0.1)',
+                  border: '1px solid #39D353',
+                  color: '#39D353',
+                  borderRadius: '12px',
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  fontWeight: 700
+                }}
+              >
+                RSI {rsiMin}-{rsiMax}
               </span>
             </div>
+            <h1 style={{ fontSize: '22px', fontWeight: 800, margin: '0 0 3px 0', color: '#ffffff' }}>
+              V1 Scalping
+            </h1>
+            <p style={{ margin: 0, fontSize: '11.5px', color: '#8b949e', fontWeight: 500 }}>
+              1D + 1H Uptrend · RSI {rsiMin}-{rsiMax} · 30M RSI Higher Than 1H
+            </p>
+          </div>
 
-            <div className="signals-box">
-              <div className="signals-head">
-                <span>🚨 Signals <span className="sig-count" id="cnt-v1">{signals.length}</span></span>
-                <span className="last-scan" id="ls-v1">
-                  {isScanning ? 'Auto scan active' : ''}
-                </span>
-              </div>
+          {/* Action Buttons: ▶ Start, ⏹ Stop, ↺ Reset, ⚡ Scan Now */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              onClick={handleStart}
+              style={{
+                background: '#238636',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '7px 16px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              ▶ Start
+            </button>
+            <button
+              onClick={handleStop}
+              style={{
+                background: '#da3633',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '7px 16px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              ⏹ Stop
+            </button>
+            <button
+              onClick={handleReset}
+              style={{
+                background: '#21262d',
+                color: '#c9d1d9',
+                border: '1px solid #30363d',
+                borderRadius: '6px',
+                padding: '7px 14px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              ↺ Reset
+            </button>
+            <button
+              onClick={handleScanNow}
+              style={{
+                background: '#238636',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '7px 16px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              🔍 Scan Now
+            </button>
+          </div>
+        </div>
 
-              <div className="signals-list" id="sig-v1">
-                {signals.length === 0 ? (
-                  <div className="no-sig" style={{ textAlign: 'center', padding: '60px', color: 'var(--muted)', fontSize: '13px' }}>
-                    {isScanning ? 'Scanning pairs for confirmed V1 Scalping setups...' : 'No signals yet — press Start to scan'}
-                  </div>
-                ) : (
-                  signals.map(coin => (
-                    <div
-                      key={coin.symbol}
-                      className="sig-card v1"
-                      style={{
-                        borderLeft: '3px solid #39D353',
-                        margin: '8px 0',
-                        padding: '12px 16px',
-                        background: 'var(--card)',
-                        borderRadius: '8px',
-                        transition: 'transform 0.2s ease, border-color 0.2s ease'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span
-                          style={{ fontWeight: 700, fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                          onClick={() => setSelectedChartCoin(coin.symbol)}
-                          title={`Click to open 1H Chart for ${coin.symbol}`}
-                        >
-                          <span>{coin.symbol}</span>
-                          <span style={{ color: '#39D353' }}>↗</span>
-                          <span style={{ fontSize: '10px', color: '#39D353', background: 'rgba(57,211,83,.15)', padding: '1px 5px', borderRadius: '4px' }}>
-                            1H Scalp
-                          </span>
-                        </span>
-                        <span
-                          style={{
-                            background: 'rgba(57,211,83,.2)',
-                            color: '#39D353',
-                            border: '1px solid rgba(57,211,83,.4)',
-                            borderRadius: '4px',
-                            padding: '2px 8px',
-                            fontSize: '11px',
-                            fontWeight: 700
-                          }}
-                        >
-                          V1 CONFIRMED
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '14px' }}>
-                        <span>Price: <strong style={{ color: '#e6edf3' }}>${formatPrice(coin.price)}</strong></span>
-                        <span>
-                          RSI 1H: <strong style={{ color: '#39D353' }}>{coin.rsi1H.toFixed(1)}</strong>
-                        </span>
-                        <span>
-                          RSI 30M: <strong style={{ color: '#39D353' }}>{coin.rsi30M.toFixed(1)}</strong>
-                        </span>
-                        <span>V1 HA: <strong style={{ color: '#39D353' }}>GREEN</strong></span>
-                        <span>1D Trend: <strong style={{ color: '#39D353' }}>{coin.trend1D}</strong></span>
-                        <span style={{ color: coin.change24h >= 0 ? '#39D353' : '#F85149' }}>
-                          24h: {coin.change24h >= 0 ? '+' : ''}{coin.change24h.toFixed(2)}%
-                        </span>
-                        <span>Target: <strong style={{ color: '#39D353' }}>+1.00%</strong></span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+        {/* Card Footer Divider: Last: [time] and mini 🔍 Scan Now (Exact picture placement) */}
+        <div
+          style={{
+            borderTop: '1px solid #161f30',
+            padding: '7px 20px',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            gap: '12px',
+            fontSize: '11px',
+            color: '#8b949e',
+            background: '#090d14'
+          }}
+        >
+          <span>
+            Last: <strong style={{ color: '#c9d1d9' }}>{lastScanTime}</strong>
+          </span>
+          <button
+            onClick={handleScanNow}
+            style={{
+              background: '#1f5131',
+              border: '1px solid #2ea043',
+              color: '#ffffff',
+              borderRadius: '5px',
+              padding: '3px 12px',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            🔍 Scan Now
+          </button>
+        </div>
+      </div>
+
+      {/* 3. Main Layout Grid: Left (Signals) | Right (Sidebar) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 290px', gap: '16px', alignItems: 'start' }}>
+        {/* Left: Signals List */}
+        <div>
+          {/* Signals Head Bar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
+                🔥 Signals
+              </span>
+              <span
+                style={{
+                  background: 'rgba(57, 211, 83, 0.2)',
+                  color: '#39D353',
+                  border: '1px solid rgba(57, 211, 83, 0.4)',
+                  borderRadius: '10px',
+                  padding: '1px 7px',
+                  fontSize: '11px',
+                  fontWeight: 800
+                }}
+              >
+                {signals.length}
+              </span>
+            </div>
+            <div style={{ fontSize: '11px', color: '#8b949e' }}>
+              Last scan: {lastScanTime}
             </div>
           </div>
 
-          {/* Side Right: Settings, Rules, Logs, Active Coins */}
-          <div className="method-side">
-            <div className="side-card v1-side">
-              <h4>⚙️ Settings</h4>
-              <div className="sound-toggle">
-                <label>🔊 Sound</label>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    id="v1-sound"
-                    checked={soundOn}
-                    onChange={e => setSoundOn(e.target.checked)}
-                  />
-                  <span className="slider"></span>
-                </label>
+          {/* Cards Container */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {signals.length === 0 ? (
+              <div
+                style={{
+                  background: '#0d1117',
+                  border: '1px solid #1e2638',
+                  borderRadius: '8px',
+                  padding: '48px 20px',
+                  textAlign: 'center',
+                  color: '#8b949e',
+                  fontSize: '12px'
+                }}
+              >
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>🎯</div>
+                <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '4px' }}>
+                  {isScanning ? 'Scanning Binance Spot pairs for 1D+1H Uptrend...' : 'No signals yet — press Start to scan'}
+                </div>
+                <p style={{ margin: 0, fontSize: '11.5px', color: '#8b949e' }}>
+                  Only genuine Binance Spot pairs meeting 1D+1H Uptrend, RSI {rsiMin}-{rsiMax}, and 30M RSI &gt; 1H RSI will appear.
+                </p>
               </div>
+            ) : (
+              signals.map(coin => (
+                <div
+                  key={coin.symbol}
+                  style={{
+                    background: '#0d1117',
+                    border: '1px solid #1e2638',
+                    borderRadius: '8px',
+                    padding: '12px 16px'
+                  }}
+                >
+                  {/* Row 1: Symbol Name + 1H Badge (Click to open TradingView directly) */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                      onClick={() => openDirectTradingView(coin.symbol, '1H')}
+                      title={`Click to open ${coin.symbol} 1H chart directly on TradingView`}
+                    >
+                      <span style={{ fontWeight: 800, fontSize: '15px', color: '#ffffff' }}>
+                        {coin.symbol}
+                      </span>
+                      <span
+                        style={{
+                          background: 'rgba(57, 211, 83, 0.15)',
+                          border: '1px solid #39D353',
+                          color: '#39D353',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          padding: '1px 7px',
+                          borderRadius: '4px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <span>1H</span>
+                        <span>↗</span>
+                      </span>
+                    </div>
 
-              <div className="form-group" style={{ marginTop: '8px' }}>
-                <label>RSI Cross Trigger Level</label>
+                    <div>
+                      <span
+                        style={{
+                          background: '#091a10',
+                          border: '1px solid #1f5131',
+                          color: '#39D353',
+                          borderRadius: '12px',
+                          padding: '2px 10px',
+                          fontSize: '11px',
+                          fontWeight: 600
+                        }}
+                      >
+                        V1 Scalping Setup
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Row 2: 5 Timeframe RSIs Badges (15M, 30M, 1H, 4H, 1D) - All Click to Open TradingView directly */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                    {[
+                      { label: '15M', val: coin.rsi15M, tf: '15M' },
+                      { label: '30M', val: coin.rsi30M, tf: '30M' },
+                      { label: '1H', val: coin.rsi1H, tf: '1H' },
+                      { label: '4H', val: coin.rsi4H, tf: '4H' },
+                      { label: '1D', val: coin.rsi1D, tf: '1D' },
+                    ].map(item => (
+                      <span
+                        key={item.label}
+                        onClick={() => openDirectTradingView(coin.symbol, item.tf)}
+                        title={`Click to open ${item.label} chart directly on TradingView`}
+                        style={{
+                          background: item.label === '1H' ? 'rgba(57, 211, 83, 0.15)' : '#091a11',
+                          border: item.label === '1H' ? '1px solid #39D353' : '1px solid #1f5131',
+                          color: '#39D353',
+                          borderRadius: '4px',
+                          padding: '3px 8px',
+                          fontSize: '11px',
+                          fontWeight: item.label === '1H' ? 700 : 600,
+                          fontFamily: 'monospace',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <span>{item.label}: {item.val.toFixed(1)}</span>
+                        <span style={{ fontSize: '9px', opacity: 0.7 }}>↗</span>
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Row 3: Blue Detail Badges with strict confirmation checks */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span
+                      style={{
+                        background: '#0c1424',
+                        border: '1px solid #1c2a40',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: '#58a6ff'
+                      }}
+                    >
+                      RSI 1H: {coin.rsi1H.toFixed(1)}
+                    </span>
+
+                    <span
+                      style={{
+                        background: '#0c1424',
+                        border: '1px solid #1c2a40',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: '#58a6ff',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <span>Trend 1H: {coin.trend1H}</span>
+                      <span>✅</span>
+                    </span>
+
+                    <span
+                      style={{
+                        background: '#0c1424',
+                        border: '1px solid #1c2a40',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: '#58a6ff',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <span>Trend 1D: {coin.trend1D}</span>
+                      <span>✅</span>
+                    </span>
+
+                    <span
+                      style={{
+                        background: '#0c1424',
+                        border: '1px solid #1c2a40',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: '#58a6ff'
+                      }}
+                    >
+                      RSI 30M: {coin.rsi30M.toFixed(1)}
+                    </span>
+
+                    <span
+                      style={{
+                        background: '#0c1424',
+                        border: '1px solid #1c2a40',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: '#58a6ff',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <span>30M RSI &gt; 1H RSI: Confirmed</span>
+                      <span>✅</span>
+                    </span>
+
+                    <span
+                      style={{
+                        background: '#0c1424',
+                        border: '1px solid #1c2a40',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: coin.is15MAbove30M ? '#39D353' : '#58a6ff',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <span>15M RSI &gt; 30M RSI: {coin.is15MAbove30M ? 'Confirmed' : 'Aligned'}</span>
+                      <span>{coin.is15MAbove30M ? '✅' : '⚡'}</span>
+                    </span>
+
+                    {coin.isFullLadder && (
+                      <span
+                        style={{
+                          background: 'rgba(234, 179, 8, 0.1)',
+                          border: '1px solid rgba(234, 179, 8, 0.4)',
+                          borderRadius: '4px',
+                          padding: '2px 8px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: '#eab308'
+                        }}
+                      >
+                        🌟 Full Multi-TF Cascade (15M &gt; 30M &gt; 1H &gt; 4H &gt; 1D)
+                      </span>
+                    )}
+
+                    <span
+                      style={{
+                        background: '#0c1424',
+                        border: '1px solid #1c2a40',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: '#58a6ff'
+                      }}
+                    >
+                      Price: {formatPrice(coin.price)}
+                    </span>
+
+                    <span
+                      onClick={() => openDirectTradingView(coin.symbol, '1H')}
+                      title="Click to open 1H chart directly on TradingView"
+                      style={{
+                        background: 'rgba(57, 211, 83, 0.1)',
+                        border: '1px solid #2ea043',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: '#39D353',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}
+                    >
+                      <span>TF: 1H</span>
+                      <span>↗</span>
+                    </span>
+                  </div>
+
+                  {/* Row 4: Bottom Timestamp */}
+                  <div style={{ marginTop: '7px', fontSize: '11px', color: '#8b949e' }}>
+                    {coin.timeAgo || 'Now'}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Right Sidebar: Settings, Method Rules, Logs, Active Coins */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* 1. ⚙ Settings */}
+          <div
+            style={{
+              background: '#0d1117',
+              border: '1px solid #1e2638',
+              borderRadius: '8px',
+              padding: '14px 16px'
+            }}
+          >
+            <h3 style={{ fontSize: '13px', fontWeight: 800, margin: '0 0 10px 0', color: '#ffffff' }}>
+              ⚙ Settings
+            </h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8b949e', display: 'block', marginBottom: '3px' }}>
+                  RSI Min
+                </label>
                 <input
                   type="number"
-                  value={rsiLevel}
-                  min={50}
-                  max={60}
-                  step={1}
-                  onChange={e => setRsiLevel(Number(e.target.value) || 54)}
+                  value={rsiMin}
+                  onChange={e => setRsiMin(Number(e.target.value) || 50)}
                   style={{
                     width: '100%',
-                    background: 'rgba(13,17,23,.8)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '7px',
-                    padding: '7px 10px',
-                    color: 'var(--text)',
-                    fontSize: '12px'
+                    background: '#05070a',
+                    border: '1px solid #30363d',
+                    borderRadius: '6px',
+                    padding: '5px 10px',
+                    color: '#e6edf3',
+                    fontSize: '12px',
+                    boxSizing: 'border-box'
                   }}
                 />
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '8px 0', fontSize: '11px', color: 'var(--muted)' }}>
-                <label>Allow Transparent V1</label>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8b949e', display: 'block', marginBottom: '3px' }}>
+                  RSI Max
+                </label>
                 <input
-                  type="checkbox"
-                  checked={allowTransparent}
-                  onChange={e => setAllowTransparent(e.target.checked)}
+                  type="number"
+                  value={rsiMax}
+                  onChange={e => setRsiMax(Number(e.target.value) || 60)}
+                  style={{
+                    width: '100%',
+                    background: '#05070a',
+                    border: '1px solid #30363d',
+                    borderRadius: '6px',
+                    padding: '5px 10px',
+                    color: '#e6edf3',
+                    fontSize: '12px',
+                    boxSizing: 'border-box'
+                  }}
                 />
               </div>
 
+              <div>
+                <label style={{ fontSize: '11px', color: '#8b949e', display: 'block', marginBottom: '3px' }}>
+                  Scan Interval (min)
+                </label>
+                <input
+                  type="number"
+                  value={scanIntervalMin}
+                  onChange={e => setScanIntervalMin(Number(e.target.value) || 5)}
+                  style={{
+                    width: '100%',
+                    background: '#05070a',
+                    border: '1px solid #30363d',
+                    borderRadius: '6px',
+                    padding: '5px 10px',
+                    color: '#e6edf3',
+                    fontSize: '12px',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '3px' }}>
+                <span style={{ fontSize: '11px', color: '#c9d1d9' }}>
+                  🔊 Sound
+                </span>
+                <label style={{ position: 'relative', display: 'inline-block', width: '34px', height: '18px', margin: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={soundOn}
+                    onChange={e => setSoundOn(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      cursor: 'pointer',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: soundOn ? '#238636' : '#30363d',
+                      borderRadius: '18px',
+                      transition: '0.2s'
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: 'absolute',
+                        height: '14px',
+                        width: '14px',
+                        left: soundOn ? '18px' : '2px',
+                        bottom: '2px',
+                        background: '#ffffff',
+                        borderRadius: '50%',
+                        transition: '0.2s'
+                      }}
+                    />
+                  </span>
+                </label>
+              </div>
+
               <button
-                className="save-btn v1-save"
-                onClick={() =>
-                  setLogs(prev => [
-                    { time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), msg: `V1 settings saved: RSI ${rsiLevel} Cross, Transparent=${allowTransparent}.` },
-                    ...prev
-                  ])
-                }
+                onClick={handleSave}
+                style={{
+                  marginTop: '6px',
+                  background: '#238636',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '7px 0',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
               >
                 💾 Save
               </button>
             </div>
+          </div>
 
-            <div className="side-card rules-card">
-              <h4>📋 Method Rules</h4>
-              <ul>
-                <li>✅ 1D Mandatory Uptrend (EMA 20 &gt; EMA 50)</li>
-                <li>✅ 1H Trend Uptrend or Sideways</li>
-                <li>✅ RSI Crosses level {rsiLevel} upward from below</li>
-                <li>✅ Smoothed Heiken Ashi Green (Transparent allowed, Red prohibited)</li>
-                <li>✅ 30M RSI positively leading 1H RSI</li>
-                <li>✅ BUY alert only after full candle confirmation</li>
-              </ul>
-            </div>
-
-            <div className="side-card logs-card">
-              <h4>📜 Logs</h4>
-              <div
-                className="logs-wrap"
-                id="logs-v1"
-                style={{ maxHeight: '140px', overflowY: 'auto', fontSize: '11px', color: 'var(--muted)' }}
-              >
-                {logs.length === 0 ? (
-                  <div style={{ color: 'var(--dim)', padding: '6px 0' }}>No logs yet — press Start to scan</div>
-                ) : (
-                  logs.map((l, i) => (
-                    <div key={i} style={{ padding: '2px 0' }}>
-                      <span style={{ color: 'var(--dim)' }}>[{l.time}]</span> {l.msg}
-                    </div>
-                  ))
-                )}
+          {/* 2. 📋 Method Rules */}
+          <div
+            style={{
+              background: '#0d1117',
+              border: '1px solid #1e2638',
+              borderRadius: '8px',
+              padding: '14px 16px'
+            }}
+          >
+            <h3 style={{ fontSize: '13px', fontWeight: 800, margin: '0 0 8px 0', color: '#ffffff' }}>
+              📋 Method Rules
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px', color: '#c9d1d9' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: '#39D353' }}>✅</span>
+                <span>1D Uptrend (Mandatory)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: '#39D353' }}>✅</span>
+                <span>1H Uptrend (Mandatory)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: '#39D353' }}>✅</span>
+                <span>RSI 1H: Selected Range (Default 50-60)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: '#39D353' }}>✅</span>
+                <span>30M RSI Higher Than 1H RSI (30M Lead)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: '#39D353' }}>✅</span>
+                <span>15M RSI Higher Than 30M RSI (Cascade)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: '#39D353' }}>✅</span>
+                <span>5 Timeframes Monitored (15M, 30M, 1H, 4H, 1D)</span>
               </div>
             </div>
+          </div>
 
-            <div className="side-card" style={{ borderColor: 'rgba(57,211,83,.3)' }}>
-              <h4 style={{ color: '#39D353' }}>🟢 Active Coins — V1 Zone</h4>
-              <div id="active-coins-v1">
-                {activeCoins.length === 0 ? (
-                  <div style={{ color: 'var(--dim)', fontSize: '11px', padding: '6px 0' }}>No active coins in 50-60 RSI</div>
-                ) : (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                    {activeCoins.slice(0, 18).map(c => (
-                      <span
-                        key={c.symbol}
-                        onClick={() => setSelectedChartCoin(c.symbol)}
-                        title={`Click to open chart: ${c.symbol} (RSI: ${c.rsi1H.toFixed(1)}, $${formatPrice(c.price)})`}
-                        style={{
-                          background: 'var(--card)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                          padding: '2px 6px',
-                          fontSize: '10px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease'
-                        }}
-                      >
-                        {c.symbol.replace('USDT', '')}
-                      </span>
-                    ))}
+          {/* 3. 📜 Logs */}
+          <div
+            style={{
+              background: '#0d1117',
+              border: '1px solid #1e2638',
+              borderRadius: '8px',
+              padding: '14px 16px'
+            }}
+          >
+            <h3 style={{ fontSize: '13px', fontWeight: 800, margin: '0 0 8px 0', color: '#ffffff' }}>
+              📜 Logs
+            </h3>
+            <div
+              style={{
+                maxHeight: '140px',
+                overflowY: 'auto',
+                fontSize: '10.5px',
+                color: '#39D353',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                fontFamily: 'monospace'
+              }}
+            >
+              {logs.length === 0 ? (
+                <div style={{ color: '#8b949e' }}>No logs yet.</div>
+              ) : (
+                logs.map((l, i) => (
+                  <div key={i} style={{ lineHeight: 1.4, color: '#39D353' }}>
+                    <span style={{ color: '#2ea043' }}>{l.time}</span> {l.msg}
                   </div>
-                )}
-              </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* 4. 🟢 Active Coins — V1 */}
+          <div
+            style={{
+              background: '#0d1117',
+              border: '1px solid #1e2638',
+              borderRadius: '8px',
+              padding: '14px 16px'
+            }}
+          >
+            <h3 style={{ fontSize: '13px', fontWeight: 800, margin: '0 0 8px 0', color: '#ffffff' }}>
+              🟢 Active Coins — V1
+            </h3>
+            <div
+              style={{
+                maxHeight: '180px',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px'
+              }}
+            >
+              {activeCoins.length === 0 ? (
+                <div style={{ fontSize: '11px', color: '#8b949e' }}>No active coins in zone.</div>
+              ) : (
+                activeCoins.slice(0, 25).map(c => (
+                  <div
+                    key={c.symbol}
+                    onClick={() => openDirectTradingView(c.symbol, '1H')}
+                    title={`Click to open 1H chart on TradingView for ${c.symbol}`}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '70px 1fr auto',
+                      alignItems: 'center',
+                      fontSize: '11px',
+                      padding: '3px 4px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      transition: 'background 0.15s ease'
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span style={{ fontWeight: 700, color: '#ffffff' }}>
+                      {c.cleanSymbol || c.symbol.replace('USDT', '')}
+                    </span>
+                    <span style={{ color: '#39D353', fontSize: '10.5px' }}>
+                      V1 Setup (RSI {c.rsi1H ? c.rsi1H.toFixed(1) : '50+'})
+                    </span>
+                    <span style={{ color: '#8b949e', fontSize: '10px' }}>
+                      {c.timeStr || '12:33:15 PM'}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
       </div>
-
-      {selectedChartCoin && (
-        <TradingViewModal
-          symbol={selectedChartCoin.endsWith('USDT') ? selectedChartCoin : `${selectedChartCoin}USDT`}
-          isOpen={true}
-          onClose={() => setSelectedChartCoin(null)}
-        />
-      )}
     </div>
   );
 };

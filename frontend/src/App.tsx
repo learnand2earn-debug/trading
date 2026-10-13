@@ -21,15 +21,18 @@ import { CommandCenter } from './pages/CommandCenter.js';
 import { Admin } from './pages/Admin.js';
 import { HiddenBullish } from './pages/HiddenBullish.js';
 import { Health } from './pages/Health.js';
+import { ScalpProLogin } from './components/ScalpProLogin.js';
 import { api, getAuthToken, UserProfile, wsManager } from './services/api.js';
 
 export const App: React.FC = () => {
-  const [currentRoute, setCurrentRoute] = useState('dashboard');
+  const [currentRoute, setCurrentRoute] = useState('v1');
   const [tradingMode, setTradingMode] = useState<'ANALYSIS' | 'PAPER' | 'LIVE'>('ANALYSIS');
   const [isEmergencyHalted, setIsEmergencyHalted] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [sessionKickMessage, setSessionKickMessage] = useState<string | null>(null);
 
   useEffect(() => {
     // Connect real-time WebSocket
@@ -42,18 +45,36 @@ export const App: React.FC = () => {
       }
     });
 
-    // Restore authenticated session if token present
+    // Restore authenticated session if token present and validate session
     const token = getAuthToken();
     if (token) {
-      api.getMe()
-        .then(data => {
-          if (data && data.user) {
-            setCurrentUser(data.user);
+      api.validateSession()
+        .then(async (sessionRes) => {
+          if (sessionRes.valid) {
+            const data = await api.getMe();
+            if (data && data.user) {
+              setCurrentUser(data.user);
+            } else {
+              api.logout();
+              setCurrentUser(null);
+            }
+          } else {
+            api.logout();
+            setCurrentUser(null);
+            if (sessionRes.code === 'SESSION_TERMINATED') {
+              setSessionKickMessage('⚠️ Session Terminated: Your license was logged in from another device or browser. Only 1 device is allowed at a time.');
+            }
           }
         })
         .catch(() => {
           api.logout();
+          setCurrentUser(null);
+        })
+        .finally(() => {
+          setIsCheckingAuth(false);
         });
+    } else {
+      setIsCheckingAuth(false);
     }
 
     // Initial fetch of risk & settings
@@ -65,6 +86,34 @@ export const App: React.FC = () => {
     return () => unsub();
   }, []);
 
+  // Real-time Single Device Session Protection (Heartbeat)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const sessionCheck = await api.validateSession();
+        if (!sessionCheck.valid) {
+          api.logout();
+          setCurrentUser(null);
+          if (sessionCheck.code === 'SESSION_TERMINATED') {
+            setSessionKickMessage('⚠️ Session Terminated: Your license was logged in on another device or browser. Only 1 device is allowed at a time.');
+          } else if (sessionCheck.code === 'LICENSE_EXPIRED') {
+            setSessionKickMessage('⚠️ License Expired: Your subscription has expired. Please contact support to renew.');
+          } else if (sessionCheck.code === 'LICENSE_REVOKED') {
+            setSessionKickMessage('⚠️ License Revoked: Your license was revoked by the administrator.');
+          } else {
+            setSessionKickMessage('⚠️ Session expired. Please log in again.');
+          }
+        }
+      } catch (e) {
+        // network glitch, retain session until confirmed
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
   const handleModeChange = async (mode: 'ANALYSIS' | 'PAPER' | 'LIVE') => {
     setTradingMode(mode);
     await api.setTradingMode(mode);
@@ -73,7 +122,9 @@ export const App: React.FC = () => {
   const handleLogout = () => {
     api.logout();
     setCurrentUser(null);
+    setSessionKickMessage(null);
   };
+
 
   const renderContent = () => {
     if (currentRoute === 'dashboard') {
@@ -130,6 +181,9 @@ export const App: React.FC = () => {
     if (currentRoute === 'ema-crossover') {
       return <EmaCrossover navigate={setCurrentRoute} />;
     }
+    if (currentRoute === 'alpha-sniper') {
+      return <Scanner navigate={setCurrentRoute} />;
+    }
 
     // Fallback if navigating to coin detail or other preserved page
     if (currentRoute.startsWith('coin/')) {
@@ -138,6 +192,32 @@ export const App: React.FC = () => {
 
     return <Dashboard navigate={setCurrentRoute} />;
   };
+
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen w-full bg-[#070d10] flex flex-col items-center justify-center font-sans text-gray-400">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#38bdf8] via-[#6366f1] to-[#a855f7] p-0.5 shadow-[0_0_25px_rgba(56,189,248,0.3)] animate-pulse flex items-center justify-center mb-4">
+          <div className="w-full h-full bg-[#0a141d] rounded-[14px] flex items-center justify-center">
+            <div className="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        </div>
+        <p className="text-xs font-mono tracking-wider text-emerald-400">Validating Trading with Dawood Session...</p>
+      </div>
+    );
+  }
+
+  // Full-screen gate: Website cannot be accessed until logged in!
+  if (!currentUser) {
+    return (
+      <ScalpProLogin
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+          setSessionKickMessage(null);
+        }}
+        sessionKickMessage={sessionKickMessage}
+      />
+    );
+  }
 
   return (
     <div>

@@ -103,8 +103,26 @@ export function evaluate30MLeadership(
     };
   }
 
+  // Also support direct level leadership (30M RSI strictly above 1H RSI)
+  if (isLeadingLevel) {
+    return {
+      leads: true,
+      reason: `30M RSI (${rsi30M.current}) is above 1H RSI (${rsi1H.current})`
+    };
+  }
+
   return {
     leads: false,
     reason: `30M RSI (${rsi30M.current}) does not show positive leadership over 1H RSI (${rsi1H.current})`
   };
 }
+
+/**
+ * Checks if RSI is in consolidation (na up ho na down ho - flat / range-bound)
+ * Diff between current and previous RSI is within threshold (e.g. <= 2.2)
+ */
+export function isRSIConsolidating(rsi: RSIResult, maxChange: number = 2.2): boolean {
+  const diff = Math.abs(rsi.current - rsi.previous);
+  return diff <= maxChange || rsi.slope === 'FLAT';
+}
+

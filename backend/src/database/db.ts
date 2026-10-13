@@ -126,12 +126,65 @@ async function initializeSchemaAndSeeds(db: IDatabase) {
     console.log('[Database] Schema migrations applied successfully.');
   }
 
-  // Ensure status column exists in users
+  // Ensure status and active_session_id columns exist in users
   try {
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS active_session_id TEXT`);
   } catch (e) {
     // Ignore if table/column already exists
   }
+
+  // Ensure licenses table exists
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS licenses (
+        id TEXT PRIMARY KEY,
+        license_key TEXT UNIQUE NOT NULL,
+        assigned_username TEXT,
+        assigned_user_id TEXT,
+        note TEXT,
+        duration_days INTEGER NOT NULL DEFAULT 30,
+        status TEXT NOT NULL DEFAULT 'active',
+        active_session_id TEXT,
+        active_device_info TEXT,
+        last_active_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(license_key)`);
+  } catch (e) {
+    // Ignore if table/index already exists
+  }
+
+  // Seed default VIP license if none exists
+  try {
+    const licCheck = await db.query('SELECT id FROM licenses WHERE license_key = $1', ['SCALP-PRO-2026-VIP1']);
+    if (licCheck.rows.length === 0) {
+      await db.query(
+        `INSERT INTO licenses (id, license_key, note, duration_days, status, expires_at)
+         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP + INTERVAL '365 days')`,
+        ['lic-demo-vip1', 'SCALP-PRO-2026-VIP1', 'VIP ScalpPro Master Trader License', 365, 'active']
+      );
+    }
+  } catch (e) {
+    // Ignore if already seeded
+  }
+
+  // Seed Dawood main license
+  try {
+    const dawoodLicCheck = await db.query('SELECT id FROM licenses WHERE license_key = $1', ['SP-031300-DA5B9B-D2D427-FFF0E6-49D3E5']);
+    if (dawoodLicCheck.rows.length === 0) {
+      await db.query(
+        `INSERT INTO licenses (id, license_key, assigned_username, note, duration_days, status, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP + INTERVAL '365 days')`,
+        ['lic-dawood-001', 'SP-031300-DA5B9B-D2D427-FFF0E6-49D3E5', 'Dawood', 'Trading with Dawood — Owner License', 365, 'active']
+      );
+    }
+  } catch (e) {
+    // Ignore if already seeded
+  }
+
 
   // Seed default admin user (admin / admin123)
   const adminHash = hashPassword('admin123');
@@ -157,6 +210,22 @@ async function initializeSchemaAndSeeds(db: IDatabase) {
       `INSERT INTO users (id, username, email, password_hash, role, status) 
        VALUES ($1, $2, $3, $4, $5, $6)`,
       ['usr-trader-1', 'trader1', 'trader1@apex-trading.io', traderHash, 'USER', 'active']
+    );
+  }
+
+  // Seed Dawood main user (Dawood / dawood12345) with license
+  const dawoodCheck = await db.query('SELECT id FROM users WHERE username = $1', ['Dawood']);
+  if (dawoodCheck.rows.length === 0) {
+    const dawoodHash = hashPassword('dawood12345');
+    await db.query(
+      `INSERT INTO users (id, username, email, password_hash, role, status) 
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      ['usr-dawood-001', 'Dawood', 'dawood@trading-dawood.io', dawoodHash, 'USER', 'active']
+    );
+    // Link the license to Dawood
+    await db.query(
+      `UPDATE licenses SET assigned_username = $1, assigned_user_id = $2 WHERE license_key = $3`,
+      ['Dawood', 'usr-dawood-001', 'SP-031300-DA5B9B-D2D427-FFF0E6-49D3E5']
     );
   }
 

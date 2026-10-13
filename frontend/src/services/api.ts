@@ -27,6 +27,88 @@ export interface ScannerRow {
   dataAgeSeconds: number;
 }
 
+export interface V1CandidateSignal {
+  symbol: string;
+  cleanSymbol: string;
+  price: number;
+  change24h: number;
+  rsi15M: number;
+  rsi30M: number;
+  rsi1H: number;
+  rsi4H: number;
+  rsi1D: number;
+  trend1H: 'Uptrend' | 'Downtrend' | 'Sideways';
+  trend1D: 'Uptrend' | 'Downtrend' | 'Sideways';
+  isLeadershipConfirmed: boolean;
+  is15MAbove30M?: boolean;
+  isLadderAligned?: boolean;
+  isFullLadder?: boolean;
+  isV1Confirmed: boolean;
+  timeAgo: string;
+  detectedAt: number;
+}
+
+export interface V1ActiveCoin {
+  symbol: string;
+  cleanSymbol: string;
+  price: number;
+  change24h: number;
+  rsi1H: number;
+  rsi30M: number;
+  timeStr: string;
+}
+
+export interface V1ScanResponse {
+  success: boolean;
+  totalMonitored: number;
+  v1ZoneCount: number;
+  activeCoins: V1ActiveCoin[];
+  signals: V1CandidateSignal[];
+  timestamp: number;
+  lastScanTimeStr: string;
+  rsiMin: number;
+  rsiMax: number;
+}
+
+export interface HiddenCandidateSignal {
+  symbol: string;
+  cleanSymbol: string;
+  price: number;
+  change24h: number;
+  rsi15M: number;
+  rsi30M: number;
+  rsi1H: number;
+  prevRsi1H: number;
+  rsi1D: number;
+  isConsolidating: boolean;
+  is30MLeading: boolean;
+  isHBConfirmed: boolean;
+  timeAgo: string;
+  detectedAt: number;
+}
+
+export interface HiddenActiveCoin {
+  symbol: string;
+  cleanSymbol: string;
+  price: number;
+  change24h: number;
+  rsi1H: number;
+  rsi30M: number;
+  timeStr: string;
+}
+
+export interface HiddenScanResponse {
+  success: boolean;
+  totalMonitored: number;
+  activeCount: number;
+  activeCoins: HiddenActiveCoin[];
+  signals: HiddenCandidateSignal[];
+  timestamp: number;
+  lastScanTimeStr: string;
+  rsiMin: number;
+  rsiMax: number;
+}
+
 export interface CoinDetailData {
   symbol: string;
   lastPrice: number;
@@ -86,6 +168,8 @@ export interface UserMeResponse {
 }
 
 const TOKEN_KEY = 'apex_auth_token';
+const SESSION_ID_KEY = 'scalppro_session_id';
+const LICENSE_KEY_KEY = 'scalppro_license_key';
 
 export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -99,16 +183,61 @@ export function setAuthToken(token: string | null) {
   }
 }
 
+export function getSessionId(): string | null {
+  return localStorage.getItem(SESSION_ID_KEY);
+}
+
+export function setSessionId(sessionId: string | null) {
+  if (sessionId) {
+    localStorage.setItem(SESSION_ID_KEY, sessionId);
+  } else {
+    localStorage.removeItem(SESSION_ID_KEY);
+  }
+}
+
+export function getStoredLicenseKey(): string | null {
+  return localStorage.getItem(LICENSE_KEY_KEY);
+}
+
+export function setStoredLicenseKey(key: string | null) {
+  if (key) {
+    localStorage.setItem(LICENSE_KEY_KEY, key);
+  } else {
+    localStorage.removeItem(LICENSE_KEY_KEY);
+  }
+}
+
 export function getAuthHeaders(): Record<string, string> {
   const token = getAuthToken();
+  const sessionId = getSessionId();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+  if (sessionId) {
+    headers['x-session-id'] = sessionId;
+  }
   return headers;
 }
+
+export interface LicenseInfo {
+  id: string;
+  license_key: string;
+  assigned_username?: string;
+  assigned_user_id?: string;
+  note?: string;
+  duration_days: number;
+  status: 'active' | 'expired' | 'revoked';
+  active_session_id?: string;
+  last_active_at?: string;
+  expires_at?: string;
+  created_at: string;
+  isOnline?: boolean;
+  isExpired?: boolean;
+}
+
 
 export interface LiveOverviewResponse {
   success: boolean;
@@ -153,6 +282,34 @@ export const api = {
   async getScanner(fresh?: boolean): Promise<{ rows: ScannerRow[]; timestamp: number }> {
     const query = fresh ? `?fresh=1&t=${Date.now()}` : '';
     const res = await fetch(`/api/market/scanner${query}`);
+    return res.json();
+  },
+
+  async getV1Scanner(options?: {
+    rsiMin?: number;
+    rsiMax?: number;
+    fresh?: boolean;
+  }): Promise<V1ScanResponse> {
+    const params = new URLSearchParams();
+    if (options?.rsiMin !== undefined) params.set('rsiMin', options.rsiMin.toString());
+    if (options?.rsiMax !== undefined) params.set('rsiMax', options.rsiMax.toString());
+    if (options?.fresh) params.set('fresh', '1');
+    params.set('t', Date.now().toString());
+    const res = await fetch(`/api/market/v1-scanner?${params.toString()}`);
+    return res.json();
+  },
+
+  async getHiddenScanner(options?: {
+    rsiMin?: number;
+    rsiMax?: number;
+    fresh?: boolean;
+  }): Promise<HiddenScanResponse> {
+    const params = new URLSearchParams();
+    if (options?.rsiMin !== undefined) params.set('rsiMin', options.rsiMin.toString());
+    if (options?.rsiMax !== undefined) params.set('rsiMax', options.rsiMax.toString());
+    if (options?.fresh) params.set('fresh', '1');
+    params.set('t', Date.now().toString());
+    const res = await fetch(`/api/market/hidden-scanner?${params.toString()}`);
     return res.json();
   },
 
@@ -315,15 +472,17 @@ export const api = {
   },
 
   // Auth & User Access Management
-  async login(username: string, password: string): Promise<{ success: boolean; token?: string; user?: UserProfile; error?: string }> {
+  async login(username: string, password: string, licenseKey?: string): Promise<{ success: boolean; token?: string; sessionId?: string; licenseKey?: string; user?: UserProfile; error?: string }> {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password, licenseKey })
     });
     const data = await res.json();
     if (data.success && data.token) {
       setAuthToken(data.token);
+      if (data.sessionId) setSessionId(data.sessionId);
+      if (data.licenseKey) setStoredLicenseKey(data.licenseKey);
     }
     return data;
   },
@@ -343,6 +502,18 @@ export const api = {
 
   logout() {
     setAuthToken(null);
+    setSessionId(null);
+  },
+
+  async validateSession(): Promise<{ valid: boolean; code?: string; error?: string; role?: string; expiresAt?: string; licenseKey?: string }> {
+    try {
+      const res = await fetch('/api/auth/validate-session', {
+        headers: getAuthHeaders()
+      });
+      return res.json();
+    } catch (e: any) {
+      return { valid: false, error: e.message };
+    }
   },
 
   async getMe(): Promise<UserMeResponse> {
@@ -379,6 +550,47 @@ export const api = {
 
   async deleteUser(id: string) {
     const res = await fetch(`/api/auth/users/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    return res.json();
+  },
+
+  // Admin License Management
+  async getLicenses(): Promise<{ success: boolean; licenses: LicenseInfo[]; error?: string }> {
+    const res = await fetch('/api/admin/licenses', {
+      headers: getAuthHeaders()
+    });
+    return res.json();
+  },
+
+  async createLicense(data: { durationDays: number; note?: string; customKey?: string }): Promise<{ success: boolean; license?: LicenseInfo; error?: string }> {
+    const res = await fetch('/api/admin/licenses', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+
+  async resetLicenseSession(id: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    const res = await fetch(`/api/admin/licenses/${id}/reset-session`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    return res.json();
+  },
+
+  async revokeLicense(id: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    const res = await fetch(`/api/admin/licenses/${id}/revoke`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    return res.json();
+  },
+
+  async deleteLicense(id: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    const res = await fetch(`/api/admin/licenses/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     });

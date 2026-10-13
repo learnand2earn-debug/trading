@@ -16,6 +16,22 @@ interface DashboardProps {
   initialFilter?: string;
 }
 
+// Open TradingView chart directly in browser tab for coin and timeframe
+const openDirectTradingView = (symbol: string, tf: string = '1H') => {
+  const clean = symbol.toUpperCase().replace('USDT', '');
+  const tfMap: Record<string, string> = {
+    '15M': '15',
+    '30M': '30',
+    '1H': '60',
+    '4H': '240',
+    '1D': 'D',
+    '1W': 'W'
+  };
+  const interval = tfMap[tf.toUpperCase()] || '60';
+  const url = `https://www.tradingview.com/chart/?symbol=BINANCE:${clean}USDT&interval=${interval}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+};
+
 export const Dashboard: React.FC<DashboardProps> = ({
   navigate,
   initialFilter = 'ALL'
@@ -44,18 +60,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [oversold, setOversold] = useState<HeatmapCoin[]>(OVERSOLD_COINS);
   const [extreme, setExtreme] = useState<HeatmapCoin[]>(EXTREME_COINS);
 
-  // Dynamic Top 10 Binance Movers (Verified Binance Crypto Spot pairs only)
+  // Dynamic Top 10 Binance Movers (Real-time Binance Crypto Spot pairs only)
   const [topMovers, setTopMovers] = useState<Array<{ symbol: string; change24h: number; price?: number }>>([
     { symbol: 'CREAM', change24h: 65.35 },
-    { symbol: 'MBL', change24h: 51.47 },
     { symbol: 'PNT', change24h: 45.23 },
-    { symbol: 'LUMIA', change24h: 33.91 },
-    { symbol: 'STRK', change24h: 26.01 },
-    { symbol: 'CFX', change24h: 25.47 },
-    { symbol: 'ERA', change24h: 22.98 },
-    { symbol: 'CHIP', change24h: 18.04 },
+    { symbol: 'GTC', change24h: 35.76 },
+    { symbol: 'OSMO', change24h: 30.71 },
+    { symbol: 'RSR', change24h: 22.32 },
     { symbol: 'KDA', change24h: 17.65 },
-    { symbol: 'NEAR', change24h: 14.95 }
+    { symbol: 'SKL', change24h: 17.47 },
+    { symbol: 'SOXSB', change24h: 16.96 },
+    { symbol: 'CLV', change24h: 13.97 },
+    { symbol: 'MDX', change24h: 13.52 }
   ]);
 
   // Dynamic Overall Market Sentiment & Breadth
@@ -188,11 +204,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           return list.map(coin => {
             const live = tickers[coin.symbol] || tickers[`${coin.symbol}USDT`];
             const baseChg = live ? live.change24h : coin.change24h;
-            const chgDrift = Number(((Math.random() - 0.48) * 0.3).toFixed(1));
-            const newChg = Number((baseChg + chgDrift).toFixed(1));
-
-            const rsiShift = Number(((Math.random() - 0.48) * 0.55).toFixed(1));
-            let newRsi = Number((coin.rsi1H + rsiShift).toFixed(1));
+            const newChg = Number(baseChg.toFixed(2));
+            let newRsi = coin.rsi1H;
 
             if (newRsi < minRsi) newRsi = Number((minRsi + 0.2).toFixed(1));
             if (newRsi > maxRsi) newRsi = Number((maxRsi - 0.2).toFixed(1));
@@ -273,8 +286,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div
         key={coin.symbol}
         className={cardClasses}
-        onClick={() => setSelectedChartCoin(coin.symbol)}
-        title={`Click to open 1H Chart for ${coin.symbol}`}
+        onClick={() => openDirectTradingView(coin.symbol, timeframe)}
+        title={`Click to open ${timeframe} Chart for ${coin.symbol} on TradingView`}
       >
         <span className="coin-sym">
           {coin.symbol}
@@ -672,7 +685,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div
                     key={coin.symbol}
                     className="mover-row"
-                    onClick={() => setSelectedChartCoin(coin.symbol)}
+                    onClick={() => openDirectTradingView(coin.symbol, timeframe)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -684,7 +697,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       fontSize: '11.5px',
                       cursor: 'pointer'
                     }}
-                    title={`Click to open 1H Chart for ${coin.symbol}`}
+                    title={`Click to open ${timeframe} Chart for ${coin.symbol} on TradingView`}
                   >
                     <span className="mover-sym" style={{ fontWeight: 700, color: '#fff' }}>{coin.symbol}</span>
                     <span className="mover-up" style={{ color: coin.change24h >= 0 ? '#39D353' : '#F85149', fontWeight: 600 }}>
@@ -715,36 +728,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
                 <div
                   className="scanner-row"
-                  onClick={() => navigate('orderBlock')}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: 'rgba(13, 17, 23, 0.7)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '11px', cursor: 'pointer' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="scanner-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#2EA043', display: 'inline-block' }}></span>
-                    <span style={{ color: '#8b949e' }}>Order Block</span>
-                  </div>
-                  <span style={{ color: '#2EA043', fontSize: '10px' }}>Live</span>
-                </div>
-                <div
-                  className="scanner-row"
-                  onClick={() => navigate('ema-crossover')}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: 'rgba(13, 17, 23, 0.7)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '11px', cursor: 'pointer' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="scanner-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--dim)', display: 'inline-block' }}></span>
-                    <span style={{ color: '#8b949e' }}>EMA Crossover</span>
-                  </div>
-                  <span style={{ color: 'var(--dim)', fontSize: '10px' }}>Idle</span>
-                </div>
-                <div
-                  className="scanner-row"
                   onClick={() => navigate('hiddenBullish')}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: 'rgba(13, 17, 23, 0.7)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '11px', cursor: 'pointer' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="scanner-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--dim)', display: 'inline-block' }}></span>
-                    <span style={{ color: '#8b949e' }}>Hidden Bullish</span>
+                    <span className="scanner-dot running" style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#39D353', boxShadow: '0 0 5px #39D353', display: 'inline-block' }}></span>
+                    <span style={{ color: '#e6edf3' }}>Hidden Bullish</span>
                   </div>
-                  <span style={{ color: 'var(--dim)', fontSize: '10px' }}>Idle</span>
+                  <span style={{ color: '#39D353', fontSize: '10px' }}>Live</span>
                 </div>
               </div>
             </div>
