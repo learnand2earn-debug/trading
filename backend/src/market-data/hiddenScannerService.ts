@@ -212,7 +212,7 @@ class HiddenScannerService {
       parseFloat(t.lastPrice || '0') > 0
     );
 
-    const nowTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const nowTimeStr = new Date(Date.now() + 2 * 60 * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const candidatesForDeepScan: Array<{
       symbol: string;
       cleanSymbol: string;

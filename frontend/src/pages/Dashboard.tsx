@@ -160,7 +160,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
 
       setUpdatedTime(
-        new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        new Date(Date.now() + 2 * 60 * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       );
 
       // Trigger subtle visual pulse on update
@@ -240,7 +240,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Initial load: trigger live sync immediately so dashboard is active immediately
   useEffect(() => {
     setUpdatedTime(
-      new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      new Date(Date.now() + 2 * 60 * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     );
     fetchAndUpdateLiveMarket(timeframe);
   }, []);

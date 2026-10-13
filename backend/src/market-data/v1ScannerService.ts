@@ -255,7 +255,7 @@ class V1ScannerService {
       quoteVolume: number;
     }> = [];
 
-    const nowTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const nowTimeStr = new Date(Date.now() + 2 * 60 * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     for (const t of spotPairs) {
       const clean = t.symbol.replace('USDT', '');

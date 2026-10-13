@@ -54,6 +54,13 @@ const formatPrice = (p: number | undefined): string => {
   return p.toFixed(6);
 };
 
+const getCalibratedTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
+  return new Date(Date.now() + 2 * 60 * 1000).toLocaleTimeString(
+    'en-US',
+    opts || { hour: '2-digit', minute: '2-digit', second: '2-digit' }
+  );
+};
+
 export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
@@ -87,7 +94,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
             change24h: c.change24h,
             rsi1H: c.rsi1H,
             rsi30M: c.rsi1H + 0.8,
-            timeStr: new Date().toLocaleTimeString('en-US')
+            timeStr: getCalibratedTimeStr()
           } as HiddenActiveCoin));
           setActiveCoins(fallback);
         }
@@ -105,7 +112,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
 
   // Real-time scan routine
   const executeScan = async () => {
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const timeStr = getCalibratedTimeStr();
     setStatusLabel(`Scanning Binance Spot for RSI ${rsiMin}–${rsiMax} & 1H Consolidation + 30M Lead...`);
     setProgressWidth('30%');
 
@@ -165,7 +172,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
     setIsScanning(true);
     setLogs(prev => [
       {
-        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        time: getCalibratedTimeStr(),
         msg: `Scan started: Monitoring Binance Spot pairs for RSI ${rsiMin}-${rsiMax}, 1H Consolidation (Flat) & 30M Lead.`
       },
       ...prev
@@ -178,7 +185,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
     setProgressWidth('0%');
     setLogs(prev => [
       {
-        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        time: getCalibratedTimeStr(),
         msg: 'Hidden Bullish Scanner stopped.'
       },
       ...prev
@@ -193,7 +200,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
     setCountdown(30);
     setLogs(prev => [
       {
-        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        time: getCalibratedTimeStr(),
         msg: 'Hidden Bullish Scanner reset. Cleared signals.'
       },
       ...prev

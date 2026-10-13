@@ -24,7 +24,8 @@ export const TopNav: React.FC<TopNavProps> = ({
 
   useEffect(() => {
     const updateTime = () => {
-      const now = new Date();
+      // Calibrated: 2 minutes ahead as requested
+      const now = new Date(Date.now() + 2 * 60 * 1000);
       setClock(
         now.toLocaleTimeString('en-US', {
           hour: '2-digit',

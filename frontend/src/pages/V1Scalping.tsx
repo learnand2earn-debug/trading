@@ -53,6 +53,14 @@ const formatPrice = (p: number | undefined): string => {
   return p.toFixed(6);
 };
 
+// Calibrated time helper advancing clock by 2 minutes
+const getCalibratedTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
+  return new Date(Date.now() + 2 * 60 * 1000).toLocaleTimeString(
+    'en-US',
+    opts || { hour: 'numeric', minute: '2-digit', second: '2-digit' }
+  );
+};
+
 export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
@@ -62,7 +70,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
   const [signals, setSignals] = useState<V1CandidateSignal[]>([]);
   const [activeCoins, setActiveCoins] = useState<V1ActiveCoin[]>([]);
   const [logs, setLogs] = useState<{ time: string; msg: string }[]>([]);
-  const [lastScanTime, setLastScanTime] = useState<string>('2:12:22 PM');
+  const [lastScanTime, setLastScanTime] = useState<string>(() => getCalibratedTimeStr());
   const soundRef = useRef(soundOn);
 
   useEffect(() => {
@@ -71,7 +79,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
 
   // Initial load
   useEffect(() => {
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    const timeStr = getCalibratedTimeStr();
     setLastScanTime(timeStr);
 
     api.getV1Scanner({ rsiMin, rsiMax, fresh: false })
@@ -96,7 +104,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
 
   // Execution scan routine
   const executeScan = async () => {
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    const timeStr = getCalibratedTimeStr();
     try {
       const data = await api.getV1Scanner({ rsiMin, rsiMax, fresh: true });
       if (data && data.success) {
@@ -143,7 +151,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
 
   const handleStart = () => {
     setIsScanning(true);
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    const timeStr = getCalibratedTimeStr();
     setLogs(prev => [
       { time: timeStr, msg: `Scan started: Monitoring V1 Scalping setups (RSI ${rsiMin}-${rsiMax})` },
       ...prev
@@ -152,7 +160,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
 
   const handleStop = () => {
     setIsScanning(false);
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    const timeStr = getCalibratedTimeStr();
     setLogs(prev => [
       { time: timeStr, msg: 'V1 Scanner stopped.' },
       ...prev
@@ -162,7 +170,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
   const handleReset = () => {
     setIsScanning(false);
     setSignals([]);
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    const timeStr = getCalibratedTimeStr();
     setLogs(prev => [
       { time: timeStr, msg: 'V1 Scanner reset. Cleared signals.' },
       ...prev
@@ -171,7 +179,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
 
   const handleScanNow = () => {
     executeScan();
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    const timeStr = getCalibratedTimeStr();
     setLogs(prev => [
       { time: timeStr, msg: '⚡ Fresh scan completed on Binance Spot market.' },
       ...prev
@@ -180,7 +188,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
 
   const handleSave = () => {
     executeScan();
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    const timeStr = getCalibratedTimeStr();
     setLogs(prev => [
       { time: timeStr, msg: `Settings saved: RSI Min=${rsiMin}, RSI Max=${rsiMax}, Interval=${scanIntervalMin}m.` },
       ...prev
