@@ -184,7 +184,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
 
       // 3. Update all 6 coin lists with actual real Binance coins and accurate RSI
-      if (overview?.zones) {
+      const hasFullZones = overview?.zones && (
+        (overview.zones.gainers?.length || 0) > 10 ||
+        (overview.zones.v1?.length || 0) > 10
+      );
+
+      if (hasFullZones && overview?.zones) {
         setGainers(overview.zones.gainers);
         setV1Coins(overview.zones.v1);
         setNeutral(overview.zones.neutral);
@@ -231,19 +236,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
           });
         };
 
-        setGainers(prev => updateListWithLive(prev, 60.1, 96.0));
-        setV1Coins(prev => {
-          const updated = updateListWithLive(prev, 50.0, 59.9);
+        setGainers(updateListWithLive(GAINERS_COINS, 60.1, 96.0));
+        setV1Coins(() => {
+          const updated = updateListWithLive(V1_ZONE_COINS, 50.0, 59.9);
           const cand = updated.find(c => (c.rsiTf ?? c.rsi1H) >= 52.0 && (c.rsiTf ?? c.rsi1H) <= 55.0) || updated[0];
           if (cand) {
             setRisingCandidate({ symbol: cand.symbol, rsi: cand.rsiTf ?? cand.rsi1H });
           }
           return updated;
         });
-        setNeutral(prev => updateListWithLive(prev, 40.0, 49.9));
-        setHiddenBull(prev => updateListWithLive(prev, 30.0, 39.9));
-        setOversold(prev => updateListWithLive(prev, 20.0, 29.9));
-        setExtreme(prev => updateListWithLive(prev, 10.0, 19.9));
+        setNeutral(updateListWithLive(NEUTRAL_COINS, 40.0, 49.9));
+        setHiddenBull(updateListWithLive(HIDDEN_BULL_COINS, 30.0, 39.9));
+        setOversold(updateListWithLive(OVERSOLD_COINS, 20.0, 29.9));
+        setExtreme(updateListWithLive(EXTREME_COINS, 10.0, 19.9));
       }
     } catch (e) {
       console.error('[Dashboard] Market update cycle failed:', e);

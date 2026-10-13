@@ -6,8 +6,8 @@ import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
  * specifically hosted on global CloudFront CDN without datacenter IP restrictions (HTTP 418).
  */
 export const BINANCE_PUBLIC_ENDPOINTS = [
-  'https://api.binance.com',
   'https://data-api.binance.vision',
+  'https://api.binance.com',
   'https://api1.binance.com',
   'https://api2.binance.com',
   'https://api3.binance.com'
@@ -24,7 +24,7 @@ export const BINANCE_BROWSER_HEADERS = {
 
 /**
  * Perform a resilient GET request to Binance public REST API with automatic mirror failover
- * and browser user-agent headers to prevent HTTP 418 datacenter blocks.
+ * and browser user-agent headers to prevent HTTP 418/451 datacenter blocks.
  */
 export async function binanceGet<T = any>(
   pathOrUrl: string,
@@ -62,7 +62,7 @@ export async function binanceGet<T = any>(
       const response = await axios.get<T>(fullUrl, {
         ...config,
         headers: mergedHeaders,
-        timeout: config.timeout || 4000
+        timeout: config.timeout || 5000
       });
 
       // Update active endpoint to the working one
@@ -72,14 +72,15 @@ export async function binanceGet<T = any>(
       lastError = err;
       const status = err.response?.status;
 
-      // Rotate mirror if blocked (418), rate limited (429), forbidden (403), or network failure
-      if (status === 418 || status === 429 || status === 403 || err.code === 'ECONNABORTED' || err.code === 'ENOTFOUND') {
-        console.warn(`[BinanceClient] ${base} returned ${status || err.code}, failing over to next mirror...`);
+      // Failover for geographic blocks (451), bans (418), rate limits (429), forbidden (403),
+      // gateway/server errors (5xx), connection aborts, DNS, timeouts:
+      if (!status || status >= 403 || err.code === 'ECONNABORTED' || err.code === 'ENOTFOUND' || err.code === 'ECONNRESET') {
+        console.warn(`[BinanceClient] ${base} returned ${status || err.code || err.message}, failing over to next mirror...`);
         continue;
       }
 
-      // Re-throw if it's a client bad request (e.g., invalid symbol 400)
-      if (status && status < 418) {
+      // Re-throw if it's a client bad request (e.g., invalid symbol 400, 404)
+      if (status && status < 403) {
         throw err;
       }
     }

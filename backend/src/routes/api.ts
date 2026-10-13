@@ -972,61 +972,77 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
       return;
     }
 
-    // Dynamic fallback with realistic zones tailored to tf
-    const fallbackZones = {
-      gainers: [
-        { symbol: 'CREAM', rsi1H: 78.5, rsiTf: 78.5, timeframe: tf, change24h: 65.35, price: 2.10 },
-        { symbol: 'MBL', rsi1H: 72.1, rsiTf: 72.1, timeframe: tf, change24h: 52.14, price: 0.00113 },
-        { symbol: 'PNT', rsi1H: 66.4, rsiTf: 66.4, timeframe: tf, change24h: 45.22, price: 0.035 }
-      ],
-      v1: [
-        { symbol: 'ETC', rsi1H: 54.2, rsiTf: 54.2, timeframe: tf, change24h: 4.82, price: 22.40 },
-        { symbol: 'SOL', rsi1H: 56.8, rsiTf: 56.8, timeframe: tf, change24h: 3.12, price: 148.50 },
-        { symbol: 'AVAX', rsi1H: 52.6, rsiTf: 52.6, timeframe: tf, change24h: 2.45, price: 28.15 }
-      ],
-      neutral: [
-        { symbol: 'BTC', rsi1H: 48.5, rsiTf: 48.5, timeframe: tf, change24h: 0.85, price: 68420.0 },
-        { symbol: 'ETH', rsi1H: 46.2, rsiTf: 46.2, timeframe: tf, change24h: -0.42, price: 2640.0 }
-      ],
-      hiddenBull: [
-        { symbol: 'ADA', rsi1H: 36.4, rsiTf: 36.4, timeframe: tf, change24h: -2.15, price: 0.352 },
-        { symbol: 'DOT', rsi1H: 34.8, rsiTf: 34.8, timeframe: tf, change24h: -3.20, price: 4.25 }
-      ],
-      oversold: [
-        { symbol: 'XRP', rsi1H: 26.5, rsiTf: 26.5, timeframe: tf, change24h: -5.40, price: 0.542 },
-        { symbol: 'DOGE', rsi1H: 24.1, rsiTf: 24.1, timeframe: tf, change24h: -6.80, price: 0.115 }
-      ],
-      extreme: [
-        { symbol: 'FTM', rsi1H: 16.2, rsiTf: 16.2, timeframe: tf, change24h: -12.40, price: 0.65 },
-        { symbol: 'NEAR', rsi1H: 18.5, rsiTf: 18.5, timeframe: tf, change24h: -9.80, price: 4.60 }
-      ]
+    // Dynamic fallback with realistic zones tailored to tf from ALL MASTER_COINS (600+ coins)
+    const tfOffsets: Record<string, number> = {
+      '15M': 2.8,
+      '30M': 1.6,
+      '1H': 0.0,
+      '4H': -1.4,
+      '1D': -3.2,
+      '1W': -5.0
     };
+    const offset = tfOffsets[tf] ?? 0;
+
+    const fullZones = {
+      gainers: [] as HeatmapCoinDto[],
+      v1: [] as HeatmapCoinDto[],
+      neutral: [] as HeatmapCoinDto[],
+      hiddenBull: [] as HeatmapCoinDto[],
+      oversold: [] as HeatmapCoinDto[],
+      extreme: [] as HeatmapCoinDto[]
+    };
+
+    const fallbackTickers: Record<string, { price: number; change24h: number }> = {};
+    const fallbackList: Array<{ symbol: string; change24h: number; price: number }> = [];
+
+    MASTER_COINS.forEach(c => {
+      const cleanSym = c.symbol.replace('USDT', '');
+      const rsiVal = parseFloat(Math.max(12, Math.min(94, c.rsi1H + offset)).toFixed(1));
+      const coinDto: HeatmapCoinDto = {
+        symbol: cleanSym,
+        rsi1H: c.rsi1H,
+        rsiTf: rsiVal,
+        timeframe: tf,
+        change24h: c.change24h,
+        price: 1.0,
+        hasWarning: c.hasWarning || Math.abs(c.change24h) > 25
+      };
+
+      fallbackTickers[cleanSym] = { price: 1.0, change24h: c.change24h };
+      fallbackTickers[`${cleanSym}USDT`] = { price: 1.0, change24h: c.change24h };
+      fallbackList.push({ symbol: cleanSym, change24h: c.change24h, price: 1.0 });
+
+      if (rsiVal >= 60) fullZones.gainers.push(coinDto);
+      else if (rsiVal >= 50) fullZones.v1.push(coinDto);
+      else if (rsiVal >= 40) fullZones.neutral.push(coinDto);
+      else if (rsiVal >= 30) fullZones.hiddenBull.push(coinDto);
+      else if (rsiVal >= 20) fullZones.oversold.push(coinDto);
+      else fullZones.extreme.push(coinDto);
+    });
+
+    const topMovers = [...fallbackList].sort((a, b) => b.change24h - a.change24h).slice(0, 10);
+    const total = fallbackList.length;
+    const rising = fallbackList.filter(c => c.change24h > 0).length;
+    const falling = total - rising;
+    const risingPct = total > 0 ? Math.round((rising / total) * 100) : 50;
+    const fallingPct = 100 - risingPct;
+    const sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' =
+      risingPct >= 52 ? 'BULLISH' : risingPct <= 45 ? 'BEARISH' : 'NEUTRAL';
 
     res.json({
       success: true,
       timeframe: tf,
-      tickers: {},
-      topMovers: [
-        { symbol: 'CREAM', change24h: 65.35, price: 2.10 },
-        { symbol: 'MBL', change24h: 52.14, price: 0.00113 },
-        { symbol: 'PNT', change24h: 45.22, price: 0.035 },
-        { symbol: 'LUMIA', change24h: 32.71, price: 0.108 },
-        { symbol: 'ERA', change24h: 26.20, price: 0.081 },
-        { symbol: 'RLC', change24h: 25.73, price: 1.07 },
-        { symbol: 'CFX', change24h: 23.76, price: 0.061 },
-        { symbol: 'STRK', change24h: 23.68, price: 0.091 },
-        { symbol: 'ACT', change24h: 20.57, price: 0.012 },
-        { symbol: 'KDA', change24h: 17.64, price: 0.006 }
-      ],
+      tickers: fallbackTickers,
+      topMovers,
       breadth: {
-        total: 500,
-        rising: 420,
-        falling: 80,
-        risingPct: 84,
-        fallingPct: 16,
-        sentiment: 'BULLISH'
+        total,
+        rising,
+        falling,
+        risingPct,
+        fallingPct,
+        sentiment
       },
-      zones: fallbackZones,
+      zones: fullZones,
       timestamp: now
     });
   }
