@@ -77,7 +77,7 @@ export const ScalpProLogin: React.FC<ScalpProLoginProps> = ({
   }, []);
 
   useEffect(() => {
-    const tick = () => setCurrentTime(new Date(Date.now() + 2 * 60 * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    const tick = () => setCurrentTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);

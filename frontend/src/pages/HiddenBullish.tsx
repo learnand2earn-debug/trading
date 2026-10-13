@@ -54,8 +54,8 @@ const formatPrice = (p: number | undefined): string => {
   return p.toFixed(6);
 };
 
-const getCalibratedTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
-  return new Date(Date.now() + 2 * 60 * 1000).toLocaleTimeString(
+const getLocalTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
+  return new Date().toLocaleTimeString(
     'en-US',
     opts || { hour: '2-digit', minute: '2-digit', second: '2-digit' }
   );
@@ -63,6 +63,8 @@ const getCalibratedTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
 
 export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () => {
   const [isScanning, setIsScanning] = useState(false);
+  const [isScanInProgress, setIsScanInProgress] = useState(false);
+  const [lastScanTime, setLastScanTime] = useState<string>(() => getLocalTimeStr());
   const [soundOn, setSoundOn] = useState(true);
   const [rsiMin, setRsiMin] = useState<number>(30); // User requirement: 30
   const [rsiMax, setRsiMax] = useState<number>(40); // User requirement: 40
@@ -80,11 +82,14 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
 
   // Initial load: fetch real 30-40 RSI candidates with exact Binance Wilder RSI
   useEffect(() => {
+    const timeStr = getLocalTimeStr();
+    setLastScanTime(timeStr);
     api.getHiddenScanner({ rsiMin, rsiMax, fresh: false })
       .then(data => {
         if (data && data.success) {
           setActiveCoins(data.activeCoins || []);
           setSignals(data.signals || []);
+          if (data.lastScanTimeStr) setLastScanTime(data.lastScanTimeStr);
         } else {
           // Fallback map from master data
           const fallback = HIDDEN_BULL_COINS.map((c: any) => ({
@@ -94,7 +99,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
             change24h: c.change24h,
             rsi1H: c.rsi1H,
             rsi30M: c.rsi1H + 0.8,
-            timeStr: getCalibratedTimeStr()
+            timeStr
           } as HiddenActiveCoin));
           setActiveCoins(fallback);
         }
@@ -102,17 +107,11 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
       .catch(() => {});
   }, [rsiMin, rsiMax]);
 
-  // Strict 30-second calm countdown timer
-  useEffect(() => {
-    const cdInterval = setInterval(() => {
-      setCountdown(prev => (prev <= 1 ? 30 : prev - 1));
-    }, 1000);
-    return () => clearInterval(cdInterval);
-  }, []);
-
   // Real-time scan routine
   const executeScan = async () => {
-    const timeStr = getCalibratedTimeStr();
+    if (isScanInProgress) return;
+    setIsScanInProgress(true);
+    const timeStr = getLocalTimeStr();
     setStatusLabel(`Scanning Binance Spot for RSI ${rsiMin}–${rsiMax} & 1H Consolidation + 30M Lead...`);
     setProgressWidth('30%');
 
@@ -126,67 +125,74 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
         const confirmedSigs = data.signals || [];
         const activeList = data.activeCoins || [];
 
-        setTimeout(() => {
-          setProgressWidth('100%');
-          setSignals(confirmedSigs);
-          setActiveCoins(activeList);
+        setProgressWidth('100%');
+        setSignals(confirmedSigs);
+        setActiveCoins(activeList);
+        setLastScanTime(data.lastScanTimeStr || timeStr);
+        setCountdown(30);
 
-          if (confirmedSigs.length > 0 && soundRef.current) {
-            playChime();
-          }
+        if (confirmedSigs.length > 0 && soundRef.current) {
+          playChime();
+        }
 
-          setStatusLabel(`Active · Monitoring ${activeList.length} Hidden Bullish pairs in RSI ${rsiMin}–${rsiMax} zone`);
-          setLogs(prev => [
-            {
-              time: timeStr,
-              msg: `Identified ${activeList.length} candidates in RSI ${rsiMin}-${rsiMax}, ${confirmedSigs.length} confirmed buy setups (1H Consolidation + 30M Lead).`
-            },
-            ...prev.slice(0, 15)
-          ]);
+        setStatusLabel(`Active · Monitoring ${activeList.length} Hidden Bullish pairs in RSI ${rsiMin}–${rsiMax} zone`);
+        setLogs(prev => [
+          {
+            time: timeStr,
+            msg: `Identified ${activeList.length} candidates in RSI ${rsiMin}-${rsiMax}, ${confirmedSigs.length} confirmed buy setups (1H Consolidation + 30M Lead).`
+          },
+          ...prev.slice(0, 15)
+        ]);
 
-          setTimeout(() => setProgressWidth('0%'), 1200);
-        }, 600);
+        setTimeout(() => setProgressWidth('0%'), 1000);
       }
     } catch (e) {
       setProgressWidth('0%');
       setStatusLabel('Active · Monitoring Hidden Bullish pairs');
+    } finally {
+      setIsScanInProgress(false);
     }
   };
 
+  // Live 1-second countdown timer for next scan when scanning is active
   useEffect(() => {
-    let timer: any;
-    if (isScanning) {
-      executeScan();
-      timer = setInterval(executeScan, 30000);
-    } else {
-      setStatusLabel('Idle');
-      setProgressWidth('0%');
-    }
+    if (!isScanning) return;
+    const interval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          executeScan();
+          return 30;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
-    return () => {
-      if (timer) clearInterval(timer);
-    };
+    return () => clearInterval(interval);
   }, [isScanning, rsiMin, rsiMax]);
 
   const handleStart = () => {
     setIsScanning(true);
+    setCountdown(30);
+    const timeStr = getLocalTimeStr();
     setLogs(prev => [
       {
-        time: getCalibratedTimeStr(),
-        msg: `Scan started: Monitoring Binance Spot pairs for RSI ${rsiMin}-${rsiMax}, 1H Consolidation (Flat) & 30M Lead.`
+        time: timeStr,
+        msg: `▶ Scan started: Real-time scan active for RSI ${rsiMin}-${rsiMax}, 1H Consolidation (Flat) & 30M Lead.`
       },
       ...prev
     ]);
+    executeScan();
   };
 
   const handleStop = () => {
     setIsScanning(false);
     setStatusLabel('Idle');
     setProgressWidth('0%');
+    const timeStr = getLocalTimeStr();
     setLogs(prev => [
       {
-        time: getCalibratedTimeStr(),
-        msg: 'Hidden Bullish Scanner stopped.'
+        time: timeStr,
+        msg: '⏹ Hidden Bullish Scanner paused.'
       },
       ...prev
     ]);
@@ -198,10 +204,11 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
     setProgressWidth('0%');
     setStatusLabel('Idle');
     setCountdown(30);
+    const timeStr = getLocalTimeStr();
     setLogs(prev => [
       {
-        time: getCalibratedTimeStr(),
-        msg: 'Hidden Bullish Scanner reset. Cleared signals.'
+        time: timeStr,
+        msg: '↺ Hidden Bullish Scanner reset. Cleared signals.'
       },
       ...prev
     ]);
@@ -238,9 +245,14 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
                 <button
                   className="btn-start"
                   onClick={handleStart}
-                  style={{ background: 'rgba(88,166,255,.15)', color: '#58A6FF', borderColor: 'rgba(88,166,255,.3)' }}
+                  disabled={isScanInProgress}
+                  style={{
+                    background: isScanning ? 'rgba(88,166,255,.28)' : 'rgba(88,166,255,.15)',
+                    color: '#58A6FF',
+                    borderColor: isScanning ? '#58A6FF' : 'rgba(88,166,255,.3)'
+                  }}
                 >
-                  ▶ Start
+                  {isScanInProgress ? '⏳ Scanning...' : isScanning ? '🟢 Active' : '▶ Start'}
                 </button>
                 <button className="btn-stop" onClick={handleStop}>⏹ Stop</button>
                 <button className="btn-reset" onClick={handleReset}>↺ Reset</button>
@@ -256,7 +268,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
               <span id="sblabel-hiddenBull" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span>{statusLabel}</span>
                 <span style={{ color: '#8b949e', fontSize: '10px' }}>
-                  · Next 30s update: <strong style={{ color: '#58A6FF' }}>{countdown}s</strong>
+                  · Next update: <strong style={{ color: isScanning ? '#58A6FF' : '#8b949e' }}>{isScanInProgress ? 'Scanning...' : isScanning ? `${countdown}s` : 'Paused'}</strong>
                 </span>
               </span>
             </div>
@@ -273,7 +285,10 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
                   </span>
                 </span>
                 <span className="last-scan">
-                  {isScanning ? 'Auto scan active' : ''}
+                  Last scan: <strong style={{ color: '#c9d1d9' }}>{lastScanTime}</strong> · Next in:{' '}
+                  <strong style={{ color: isScanning ? '#58A6FF' : '#8b949e' }}>
+                    {isScanInProgress ? 'Scanning...' : isScanning ? `${countdown}s` : 'Paused'}
+                  </strong>
                 </span>
               </div>
 

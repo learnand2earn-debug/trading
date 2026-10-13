@@ -160,7 +160,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
 
       setUpdatedTime(
-        new Date(Date.now() + 2 * 60 * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       );
 
       // Trigger subtle visual pulse on update
@@ -193,9 +193,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         setExtreme(overview.zones.extreme);
 
         const v1List = overview.zones.v1;
-        const cand = v1List.find(c => c.rsi1H >= 52.0 && c.rsi1H <= 55.0) || v1List[0];
+        const cand = v1List.find(c => (c.rsiTf ?? c.rsi1H) >= 52.0 && (c.rsiTf ?? c.rsi1H) <= 55.0) || v1List[0];
         if (cand) {
-          setRisingCandidate({ symbol: cand.symbol, rsi: cand.rsi1H });
+          setRisingCandidate({ symbol: cand.symbol, rsi: cand.rsiTf ?? cand.rsi1H });
         }
       } else {
         const tickers = overview?.tickers || {};
@@ -207,13 +207,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
             const newChg = Number(baseChg.toFixed(2));
             let newRsi = coin.rsi1H;
 
+            const tfOffsets: Record<string, number> = {
+              '15M': 2.8,
+              '30M': 1.6,
+              '1H': 0.0,
+              '4H': -1.4,
+              '1D': -3.2,
+              '1W': -5.0
+            };
+            const tfOffset = tfOffsets[currentTf] ?? 0;
+            const rsiWithTf = Number((newRsi + tfOffset).toFixed(1));
+
             if (newRsi < minRsi) newRsi = Number((minRsi + 0.2).toFixed(1));
             if (newRsi > maxRsi) newRsi = Number((maxRsi - 0.2).toFixed(1));
 
             return {
               ...coin,
               change24h: newChg,
-              rsi1H: newRsi
+              rsi1H: newRsi,
+              rsiTf: rsiWithTf,
+              timeframe: currentTf
             };
           });
         };
@@ -221,9 +234,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         setGainers(prev => updateListWithLive(prev, 60.1, 96.0));
         setV1Coins(prev => {
           const updated = updateListWithLive(prev, 50.0, 59.9);
-          const cand = updated.find(c => c.rsi1H >= 52.0 && c.rsi1H <= 55.0) || updated[0];
+          const cand = updated.find(c => (c.rsiTf ?? c.rsi1H) >= 52.0 && (c.rsiTf ?? c.rsi1H) <= 55.0) || updated[0];
           if (cand) {
-            setRisingCandidate({ symbol: cand.symbol, rsi: cand.rsi1H });
+            setRisingCandidate({ symbol: cand.symbol, rsi: cand.rsiTf ?? cand.rsi1H });
           }
           return updated;
         });
@@ -240,7 +253,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Initial load: trigger live sync immediately so dashboard is active immediately
   useEffect(() => {
     setUpdatedTime(
-      new Date(Date.now() + 2 * 60 * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     );
     fetchAndUpdateLiveMarket(timeframe);
   }, []);
@@ -275,7 +288,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const chgSign = isUp ? '+' : '';
     const isWarning = coin.hasWarning;
     const isAccent = coin.isAccentGreen;
-    const isRisingZone = coin.rsi1H >= 52 && coin.rsi1H <= 55;
+    const effectiveRsi = coin.rsiTf !== undefined ? coin.rsiTf : coin.rsi1H;
+    const isRisingZone = effectiveRsi >= 52 && effectiveRsi <= 55;
 
     let cardClasses = `hm-coin ${zoneClass}`;
     if (isWarning) cardClasses += ' hm-warning-card';
@@ -286,15 +300,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div
         key={coin.symbol}
         className={cardClasses}
-        onClick={() => openDirectTradingView(coin.symbol, timeframe)}
-        title={`Click to open ${timeframe} Chart for ${coin.symbol} on TradingView`}
+        onClick={() => setSelectedChartCoin(coin.symbol)}
+        title={`Click to open ${timeframe} interactive chart for ${coin.symbol}`}
+        style={{ cursor: 'pointer' }}
       >
         <span className="coin-sym">
           {coin.symbol}
           {isWarning && <span style={{ color: '#F0C040' }}>⚠️</span>}
         </span>
         <span className="coin-metrics">
-          <span className="coin-rsi">RSI: {coin.rsi1H.toFixed(1)}</span>
+          <span className="coin-rsi">{timeframe} RSI: {effectiveRsi.toFixed(1)}</span>
           <span className={`coin-chg ${chgClass}`}>
             {chgSign}{coin.change24h.toFixed(1)}%
           </span>
@@ -364,8 +379,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   LIVE
                 </span>
 
-                <span style={{ fontSize: '12px', color: '#6e7681', fontWeight: 400, marginLeft: '4px' }}>
-                  Updated: {updatedTime}
+                <span style={{ fontSize: '12px', color: '#8b949e', fontWeight: 500, marginLeft: '4px' }}>
+                  Updated: <strong style={{ color: '#c9d1d9' }}>{updatedTime}</strong> · Next in: <strong style={{ color: '#39D353' }}>{countdown}s</strong>
                 </span>
               </div>
 

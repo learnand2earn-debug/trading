@@ -1,6 +1,8 @@
 export interface HeatmapCoin {
   symbol: string;
   rsi1H: number;
+  rsiTf?: number;
+  timeframe?: string;
   change24h: number;
   hasWarning?: boolean;
   isAccentGreen?: boolean;

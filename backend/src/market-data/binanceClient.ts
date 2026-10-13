@@ -6,11 +6,11 @@ import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
  * specifically hosted on global CloudFront CDN without datacenter IP restrictions (HTTP 418).
  */
 export const BINANCE_PUBLIC_ENDPOINTS = [
+  'https://api.binance.com',
   'https://data-api.binance.vision',
   'https://api1.binance.com',
   'https://api2.binance.com',
-  'https://api3.binance.com',
-  'https://api.binance.com'
+  'https://api3.binance.com'
 ];
 
 let activeEndpointIndex = 0;
@@ -62,7 +62,7 @@ export async function binanceGet<T = any>(
       const response = await axios.get<T>(fullUrl, {
         ...config,
         headers: mergedHeaders,
-        timeout: config.timeout || 8000
+        timeout: config.timeout || 4000
       });
 
       // Update active endpoint to the working one

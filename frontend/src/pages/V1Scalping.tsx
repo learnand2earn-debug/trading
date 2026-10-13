@@ -53,9 +53,9 @@ const formatPrice = (p: number | undefined): string => {
   return p.toFixed(6);
 };
 
-// Calibrated time helper advancing clock by 2 minutes
-const getCalibratedTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
-  return new Date(Date.now() + 2 * 60 * 1000).toLocaleTimeString(
+// Local time helper with genuine local time
+const getLocalTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
+  return new Date().toLocaleTimeString(
     'en-US',
     opts || { hour: 'numeric', minute: '2-digit', second: '2-digit' }
   );
@@ -63,6 +63,8 @@ const getCalibratedTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
 
 export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => {
   const [isScanning, setIsScanning] = useState(false);
+  const [isScanInProgress, setIsScanInProgress] = useState(false);
+  const [countdown, setCountdown] = useState<number>(30);
   const [soundOn, setSoundOn] = useState(true);
   const [rsiMin, setRsiMin] = useState<number>(50);
   const [rsiMax, setRsiMax] = useState<number>(60);
@@ -70,7 +72,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
   const [signals, setSignals] = useState<V1CandidateSignal[]>([]);
   const [activeCoins, setActiveCoins] = useState<V1ActiveCoin[]>([]);
   const [logs, setLogs] = useState<{ time: string; msg: string }[]>([]);
-  const [lastScanTime, setLastScanTime] = useState<string>(() => getCalibratedTimeStr());
+  const [lastScanTime, setLastScanTime] = useState<string>(() => getLocalTimeStr());
   const soundRef = useRef(soundOn);
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
 
   // Initial load
   useEffect(() => {
-    const timeStr = getCalibratedTimeStr();
+    const timeStr = getLocalTimeStr();
     setLastScanTime(timeStr);
 
     api.getV1Scanner({ rsiMin, rsiMax, fresh: false })
@@ -91,10 +93,10 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
           setLastScanTime(data.lastScanTimeStr || timeStr);
 
           const initialLogs: { time: string; msg: string }[] = [
-            { time: timeStr, msg: `V1 done - ${sigs.length} new signals` }
+            { time: timeStr, msg: `V1 ready - ${sigs.length} candidate signals loaded` }
           ];
           sigs.forEach(s => {
-            initialLogs.push({ time: timeStr, msg: `${s.symbol} - V1 Scalping Setup` });
+            initialLogs.push({ time: timeStr, msg: `${s.symbol} - V1 Scalping Setup (RSI 1H: ${s.rsi1H})` });
           });
           setLogs(initialLogs);
         }
@@ -104,7 +106,9 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
 
   // Execution scan routine
   const executeScan = async () => {
-    const timeStr = getCalibratedTimeStr();
+    if (isScanInProgress) return;
+    setIsScanInProgress(true);
+    const timeStr = getLocalTimeStr();
     try {
       const data = await api.getV1Scanner({ rsiMin, rsiMax, fresh: true });
       if (data && data.success) {
@@ -112,13 +116,14 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
         setSignals(newSignals);
         setActiveCoins(data.activeCoins || []);
         setLastScanTime(data.lastScanTimeStr || timeStr);
+        setCountdown(30);
 
         if (newSignals.length > 0 && soundRef.current) {
           playChime();
         }
 
         const logEntries = [
-          { time: timeStr, msg: `V1 done - ${newSignals.length} new signals` }
+          { time: timeStr, msg: `V1 scan done - ${newSignals.length} signals found` }
         ];
 
         newSignals.forEach(s => {
@@ -132,37 +137,43 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
       }
     } catch (e) {
       // Keep existing data
+    } finally {
+      setIsScanInProgress(false);
     }
   };
 
-  // Interval loop
+  // Live 1-second countdown timer for next scan when scanning is active
   useEffect(() => {
-    let timer: any;
-    if (isScanning) {
-      executeScan();
-      const ms = Math.max(10, scanIntervalMin * 60) * 1000;
-      timer = setInterval(executeScan, Math.min(ms, 30000));
-    }
+    if (!isScanning) return;
+    const interval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          executeScan();
+          return 30;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [isScanning, rsiMin, rsiMax, scanIntervalMin]);
+    return () => clearInterval(interval);
+  }, [isScanning, rsiMin, rsiMax]);
 
   const handleStart = () => {
     setIsScanning(true);
-    const timeStr = getCalibratedTimeStr();
+    setCountdown(30);
+    const timeStr = getLocalTimeStr();
     setLogs(prev => [
-      { time: timeStr, msg: `Scan started: Monitoring V1 Scalping setups (RSI ${rsiMin}-${rsiMax})` },
+      { time: timeStr, msg: `▶ Real-time scanner active (RSI ${rsiMin}-${rsiMax})` },
       ...prev
     ]);
+    executeScan();
   };
 
   const handleStop = () => {
     setIsScanning(false);
-    const timeStr = getCalibratedTimeStr();
+    const timeStr = getLocalTimeStr();
     setLogs(prev => [
-      { time: timeStr, msg: 'V1 Scanner stopped.' },
+      { time: timeStr, msg: '⏹ V1 Scanner paused.' },
       ...prev
     ]);
   };
@@ -170,25 +181,26 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
   const handleReset = () => {
     setIsScanning(false);
     setSignals([]);
-    const timeStr = getCalibratedTimeStr();
+    const timeStr = getLocalTimeStr();
     setLogs(prev => [
-      { time: timeStr, msg: 'V1 Scanner reset. Cleared signals.' },
+      { time: timeStr, msg: '↺ V1 Scanner reset. Cleared signals.' },
       ...prev
     ]);
   };
 
   const handleScanNow = () => {
+    setCountdown(30);
     executeScan();
-    const timeStr = getCalibratedTimeStr();
+    const timeStr = getLocalTimeStr();
     setLogs(prev => [
-      { time: timeStr, msg: '⚡ Fresh scan completed on Binance Spot market.' },
+      { time: timeStr, msg: '⚡ Fresh scan triggered manually on Binance Spot market.' },
       ...prev
     ]);
   };
 
   const handleSave = () => {
     executeScan();
-    const timeStr = getCalibratedTimeStr();
+    const timeStr = getLocalTimeStr();
     setLogs(prev => [
       { time: timeStr, msg: `Settings saved: RSI Min=${rsiMin}, RSI Max=${rsiMax}, Interval=${scanIntervalMin}m.` },
       ...prev
@@ -247,10 +259,11 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <button
               onClick={handleStart}
+              disabled={isScanInProgress}
               style={{
-                background: '#238636',
+                background: isScanning ? '#1b5e20' : '#238636',
+                border: isScanning ? '1px solid #39D353' : 'none',
                 color: '#ffffff',
-                border: 'none',
                 borderRadius: '6px',
                 padding: '7px 16px',
                 fontSize: '12px',
@@ -261,7 +274,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
                 gap: '6px'
               }}
             >
-              ▶ Start
+              {isScanInProgress ? '⏳ Scanning...' : isScanning ? '🟢 Active' : '▶ Start'}
             </button>
             <button
               onClick={handleStop}
@@ -335,7 +348,10 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
           }}
         >
           <span>
-            Last: <strong style={{ color: '#c9d1d9' }}>{lastScanTime}</strong>
+            Last: <strong style={{ color: '#c9d1d9' }}>{lastScanTime}</strong> · Next in:{' '}
+            <strong style={{ color: isScanning ? '#39D353' : '#8b949e' }}>
+              {isScanInProgress ? 'Scanning...' : isScanning ? `${countdown}s` : 'Paused'}
+            </strong>
           </span>
           <button
             onClick={handleScanNow}
