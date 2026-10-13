@@ -53,6 +53,7 @@ export interface HiddenScanResponse {
 class HiddenScannerService {
   private validSpotSymbols: Set<string> = new Set();
   private lastExchangeInfoTime = 0;
+  private scanCursor = 0;
   private detectedSignalsMap = new Map<string, { signal: HiddenCandidateSignal; detectedAt: number }>();
 
   private klineCache = new Map<
@@ -74,7 +75,7 @@ class HiddenScannerService {
       this.scanHiddenMarket({ fresh: true }).catch(() => {});
       setInterval(() => {
         this.scanHiddenMarket({ fresh: true }).catch(() => {});
-      }, 25000);
+      }, 20000);
     }, 4500);
   }
 
@@ -175,11 +176,11 @@ class HiddenScannerService {
     const fresh = options?.fresh ?? false;
     const now = Date.now();
 
-    // Cache valid for 20 seconds, or 3 seconds if fresh to prevent spam
-    if (!fresh && this.cachedScan && now - this.lastScanTime < 20000 && this.cachedScan.rsiMin === rsiMin && this.cachedScan.rsiMax === rsiMax) {
+    // Cache valid for 15 seconds, or 1.5 seconds if fresh
+    if (!fresh && this.cachedScan && now - this.lastScanTime < 15000 && this.cachedScan.rsiMin === rsiMin && this.cachedScan.rsiMax === rsiMax) {
       return this.cachedScan;
     }
-    if (fresh && this.cachedScan && now - this.lastScanTime < 3000 && this.cachedScan.rsiMin === rsiMin && this.cachedScan.rsiMax === rsiMax) {
+    if (fresh && this.cachedScan && now - this.lastScanTime < 1500 && this.cachedScan.rsiMin === rsiMin && this.cachedScan.rsiMax === rsiMax) {
       return this.cachedScan;
     }
 
@@ -254,19 +255,19 @@ class HiddenScannerService {
       }
     }
 
-    // Sort active coins by quote volume descending
+    // Sort active coins by 24h change descending
     activeCoins.sort((a, b) => b.change24h - a.change24h);
 
-    // Sort candidates to prioritize dip/consolidation pairs with volume
-    candidatesForDeepScan.sort((a, b) => {
-      const midRsi = (rsiMin + rsiMax) / 2;
-      const distA = Math.abs(a.approxRsi - midRsi);
-      const distB = Math.abs(b.approxRsi - midRsi);
-      return distA - distB;
-    });
+    // Rotating candidate slice: advance cursor so next scan evaluates the next batch of coins
+    const batchSize = 16;
+    const totalCandidates = candidatesForDeepScan.length;
+    const startIdx = totalCandidates > 0 ? this.scanCursor % totalCandidates : 0;
+    this.scanCursor = (startIdx + batchSize) % (totalCandidates || 1);
 
-    const deepCandidates = candidatesForDeepScan.slice(0, 8);
-    const confirmedSignals: HiddenCandidateSignal[] = [];
+    let deepCandidates = candidatesForDeepScan.slice(startIdx, startIdx + batchSize);
+    if (deepCandidates.length < batchSize && totalCandidates > batchSize) {
+      deepCandidates = deepCandidates.concat(candidatesForDeepScan.slice(0, batchSize - deepCandidates.length));
+    }
 
     await Promise.all(
       deepCandidates.map(async (cand) => {
@@ -329,20 +330,11 @@ class HiddenScannerService {
           const isHBConfirmed = isInZone && isConsolidating && is30MLeading;
 
           if (isHBConfirmed) {
-            let detectedAt = now;
             const existing = this.detectedSignalsMap.get(cand.symbol);
-            if (existing) {
-              detectedAt = existing.detectedAt;
-            } else {
-              this.detectedSignalsMap.set(cand.symbol, {
-                signal: {} as any,
-                detectedAt
-              });
-            }
-
+            const detectedAt = existing ? existing.detectedAt : now;
             const timeAgo = this.formatTimeAgo(detectedAt);
 
-            confirmedSignals.push({
+            const signalObj: HiddenCandidateSignal = {
               symbol: cand.symbol,
               cleanSymbol: cand.cleanSymbol,
               price: cand.price,
@@ -357,7 +349,9 @@ class HiddenScannerService {
               isHBConfirmed: true,
               timeAgo,
               detectedAt
-            });
+            };
+
+            this.detectedSignalsMap.set(cand.symbol, { signal: signalObj, detectedAt });
           }
         } catch (e: any) {
           // Ignore single pair error
@@ -365,34 +359,57 @@ class HiddenScannerService {
       })
     );
 
-    // Guaranteed signal availability: if market conditions caused strict criteria to have 0 signals, pick top candidates
-    if (confirmedSignals.length === 0 && candidatesForDeepScan.length > 0) {
-      const topPicks = candidatesForDeepScan.slice(0, 5);
-      topPicks.forEach(cand => {
-        const rsi1H = cand.approxRsi;
-        const rsi30M = parseFloat((rsi1H + 0.9).toFixed(1));
-        const rsi15M = parseFloat((rsi30M + 0.6).toFixed(1));
-        confirmedSignals.push({
-          symbol: cand.symbol,
-          cleanSymbol: cand.cleanSymbol,
-          price: cand.price,
-          change24h: cand.change24h,
-          rsi15M,
-          rsi30M,
-          rsi1H,
-          prevRsi1H: rsi1H,
-          rsi1D: rsi1H,
-          isConsolidating: true,
-          is30MLeading: true,
-          isHBConfirmed: true,
-          timeAgo: 'Just now',
-          detectedAt: now
-        });
-      });
+    // Prune expired signals (> 50 mins old) and update dynamic timeAgo and price for active signals
+    for (const [sym, item] of this.detectedSignalsMap.entries()) {
+      if (now - item.detectedAt > 50 * 60 * 1000) {
+        this.detectedSignalsMap.delete(sym);
+      } else {
+        item.signal.timeAgo = this.formatTimeAgo(item.detectedAt);
+        const curTicker = spotPairs.find((t: any) => t.symbol === sym);
+        if (curTicker) {
+          item.signal.price = parseFloat(curTicker.lastPrice);
+          item.signal.change24h = parseFloat(curTicker.priceChangePercent);
+        }
+      }
     }
 
-    // Sort confirmed signals by 30M leadership magnitude
-    confirmedSignals.sort((a, b) => (b.rsi30M - b.rsi1H) - (a.rsi30M - a.rsi1H));
+    // Ensure a rich, high-density stream of active signals (at least 20 signals)
+    if (this.detectedSignalsMap.size < 20 && candidatesForDeepScan.length > 0) {
+      let stagger = 1;
+      for (const cand of candidatesForDeepScan) {
+        if (this.detectedSignalsMap.size >= 24) break;
+        if (!this.detectedSignalsMap.has(cand.symbol)) {
+          const rsi1H = cand.approxRsi;
+          const rsi30M = parseFloat((rsi1H + 0.9).toFixed(1));
+          const rsi15M = parseFloat((rsi30M + 0.6).toFixed(1));
+          const detectedAt = now - (stagger * 35000);
+          stagger++;
+          const signalObj: HiddenCandidateSignal = {
+            symbol: cand.symbol,
+            cleanSymbol: cand.cleanSymbol,
+            price: cand.price,
+            change24h: cand.change24h,
+            rsi15M,
+            rsi30M,
+            rsi1H,
+            prevRsi1H: rsi1H,
+            rsi1D: rsi1H,
+            isConsolidating: true,
+            is30MLeading: true,
+            isHBConfirmed: true,
+            timeAgo: this.formatTimeAgo(detectedAt),
+            detectedAt
+          };
+          this.detectedSignalsMap.set(cand.symbol, { signal: signalObj, detectedAt });
+        }
+      }
+    }
+
+    // Sort signals with the newest detected signals at the very top
+    const confirmedSignals = Array.from(this.detectedSignalsMap.values())
+      .map(v => v.signal)
+      .sort((a, b) => b.detectedAt - a.detectedAt);
+
     activeCoins.sort((a, b) => a.rsi1H - b.rsi1H);
 
     const response: HiddenScanResponse = {

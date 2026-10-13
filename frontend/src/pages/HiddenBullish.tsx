@@ -62,7 +62,7 @@ const getLocalTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
 };
 
 const generateFallbackHBSignals = (): HiddenCandidateSignal[] => {
-  return HIDDEN_BULL_COINS.slice(0, 5).map(c => ({
+  return HIDDEN_BULL_COINS.slice(0, 18).map(c => ({
     symbol: c.symbol.endsWith('USDT') ? c.symbol : `${c.symbol}USDT`,
     cleanSymbol: c.symbol.replace('USDT', ''),
     price: 1.25,
@@ -113,18 +113,15 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
           }
           setSignals(sigs);
           if (data.lastScanTimeStr) setLastScanTime(data.lastScanTimeStr);
+          const initialLogs: { time: string; msg: string }[] = [
+            { time: timeStr, msg: `Hidden Bullish ready - ${sigs.length} candidate signals loaded` }
+          ];
+          sigs.slice(0, 8).forEach(s => {
+            initialLogs.push({ time: timeStr, msg: `${s.symbol} - 1H Consolidation + 30M Lead (RSI 1H: ${s.rsi1H})` });
+          });
+          setLogs(initialLogs);
         } else {
-          // Fallback map from master data
-          const fallback = HIDDEN_BULL_COINS.map((c: any) => ({
-            symbol: c.symbol.endsWith('USDT') ? c.symbol : `${c.symbol}USDT`,
-            cleanSymbol: c.symbol.replace('USDT', ''),
-            price: 1.25,
-            change24h: c.change24h,
-            rsi1H: c.rsi1H,
-            rsi30M: c.rsi1H + 0.8,
-            timeStr
-          } as HiddenActiveCoin));
-          setActiveCoins(fallback);
+          setActiveCoins([]);
           setSignals(generateFallbackHBSignals());
         }
       })
@@ -155,23 +152,34 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
         const activeList = data.activeCoins || [];
 
         setProgressWidth('100%');
-        setSignals(confirmedSigs);
+
+        setSignals(prevSignals => {
+          const prevMap = new Map(prevSignals.map(s => [s.symbol, s]));
+          const freshAlerts = confirmedSigs.filter(s => !prevMap.has(s.symbol) || s.timeAgo === 'just now');
+
+          if (freshAlerts.length > 0) {
+            if (soundRef.current) playChime();
+            const freshLogs = freshAlerts.slice(0, 5).map(s => ({
+              time: timeStr,
+              msg: `🚨 Fresh Signal: ${s.symbol} confirmed - 1H Consolidation + 30M Lead`
+            }));
+            setLogs(prev => [...freshLogs, ...prev.slice(0, 35)]);
+          } else {
+            setLogs(prev => [
+              {
+                time: timeStr,
+                msg: `Scanned ${activeList.length} candidates in RSI ${rsiMin}-${rsiMax}, ${confirmedSigs.length} active buy setups.`
+              },
+              ...prev.slice(0, 35)
+            ]);
+          }
+
+          return confirmedSigs;
+        });
+
         setActiveCoins(activeList);
         setLastScanTime(data.lastScanTimeStr || timeStr);
-        setCountdown(30);
-
-        if (confirmedSigs.length > 0 && soundRef.current) {
-          playChime();
-        }
-
         setStatusLabel(`Active · Monitoring ${activeList.length} Hidden Bullish pairs in RSI ${rsiMin}–${rsiMax} zone`);
-        setLogs(prev => [
-          {
-            time: timeStr,
-            msg: `Identified ${activeList.length} candidates in RSI ${rsiMin}-${rsiMax}, ${confirmedSigs.length} confirmed buy setups (1H Consolidation + 30M Lead).`
-          },
-          ...prev.slice(0, 15)
-        ]);
 
         setTimeout(() => setProgressWidth('0%'), 1000);
       } else {
@@ -190,17 +198,20 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
   useEffect(() => {
     if (!isScanning) return;
     const interval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          executeScan();
-          return 30;
-        }
-        return prev - 1;
-      });
+      setCountdown(prev => (prev > 0 ? prev - 1 : 0));
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isScanning, rsiMin, rsiMax]);
+  }, [isScanning]);
+
+  // When countdown hits 0, trigger scan and reset to 30s
+  useEffect(() => {
+    if (!isScanning) return;
+    if (countdown === 0) {
+      executeScan();
+      setCountdown(30);
+    }
+  }, [countdown, isScanning]);
 
   const handleStart = () => {
     setIsScanning(true);

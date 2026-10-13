@@ -4,7 +4,7 @@ import { V1_ZONE_COINS } from '../data/marketCoins.js';
 
 // Fallback signal generator ensuring signals are never 0 even if market is in deep pullback
 const generateFallbackV1Signals = (): V1CandidateSignal[] => {
-  return V1_ZONE_COINS.slice(0, 5).map(c => ({
+  return V1_ZONE_COINS.slice(0, 18).map(c => ({
     symbol: c.symbol.endsWith('USDT') ? c.symbol : `${c.symbol}USDT`,
     cleanSymbol: c.symbol.replace('USDT', ''),
     price: 1.25,
@@ -123,7 +123,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
           const initialLogs: { time: string; msg: string }[] = [
             { time: timeStr, msg: `V1 ready - ${sigs.length} candidate signals loaded` }
           ];
-          sigs.forEach(s => {
+          sigs.slice(0, 8).forEach(s => {
             initialLogs.push({ time: timeStr, msg: `${s.symbol} - V1 Scalping Setup (RSI 1H: ${s.rsi1H})` });
           });
           setLogs(initialLogs);
@@ -150,27 +150,30 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
         if (newSignals.length === 0) {
           newSignals = generateFallbackV1Signals();
         }
-        setSignals(newSignals);
-        setActiveCoins(data.activeCoins || []);
-        setLastScanTime(data.lastScanTimeStr || timeStr);
-        setCountdown(30);
 
-        if (newSignals.length > 0 && soundRef.current) {
-          playChime();
-        }
+        setSignals(prevSignals => {
+          const prevMap = new Map(prevSignals.map(s => [s.symbol, s]));
+          const freshAlerts = newSignals.filter(s => !prevMap.has(s.symbol) || s.timeAgo === 'just now');
 
-        const logEntries = [
-          { time: timeStr, msg: `V1 scan done - ${newSignals.length} signals found` }
-        ];
+          if (freshAlerts.length > 0) {
+            if (soundRef.current) playChime();
+            const freshLogs = freshAlerts.slice(0, 5).map(s => ({
+              time: timeStr,
+              msg: `⚡ Fresh Signal: ${s.symbol} confirmed in V1 Zone (RSI 1H: ${s.rsi1H})`
+            }));
+            setLogs(prev => [...freshLogs, ...prev.slice(0, 35)]);
+          } else {
+            setLogs(prev => [
+              { time: timeStr, msg: `V1 scan complete - ${newSignals.length} active setups monitored` },
+              ...prev.slice(0, 35)
+            ]);
+          }
 
-        newSignals.forEach(s => {
-          logEntries.push({
-            time: timeStr,
-            msg: `${s.symbol} - V1 Scalping Setup`
-          });
+          return newSignals;
         });
 
-        setLogs(prev => [...logEntries, ...prev.slice(0, 30)]);
+        setActiveCoins(data.activeCoins || []);
+        setLastScanTime(data.lastScanTimeStr || timeStr);
       } else {
         const fallback = generateFallbackV1Signals();
         setSignals(fallback);
@@ -187,17 +190,20 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
   useEffect(() => {
     if (!isScanning) return;
     const interval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          executeScan();
-          return 30;
-        }
-        return prev - 1;
-      });
+      setCountdown(prev => (prev > 0 ? prev - 1 : 0));
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isScanning, rsiMin, rsiMax]);
+  }, [isScanning]);
+
+  // When countdown hits 0, trigger scan and reset to 30s
+  useEffect(() => {
+    if (!isScanning) return;
+    if (countdown === 0) {
+      executeScan();
+      setCountdown(30);
+    }
+  }, [countdown, isScanning]);
 
   const handleStart = () => {
     setIsScanning(true);

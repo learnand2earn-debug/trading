@@ -51,10 +51,10 @@ export async function binanceGet<T = any>(
   };
 
   let lastError: any = null;
-  const attempts = BINANCE_PUBLIC_ENDPOINTS.length;
+  const attempts = (config.timeout && config.timeout <= 2500) ? 2 : BINANCE_PUBLIC_ENDPOINTS.length;
 
   for (let i = 0; i < attempts; i++) {
-    const idx = (activeEndpointIndex + i) % attempts;
+    const idx = (activeEndpointIndex + i) % BINANCE_PUBLIC_ENDPOINTS.length;
     const base = BINANCE_PUBLIC_ENDPOINTS[idx];
     const fullUrl = `${base}${path}`;
 
