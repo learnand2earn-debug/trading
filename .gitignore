@@ -4,7 +4,8 @@ dist/
 **/dist/
 .env
 .env*
-data/
+/data/
+!frontend/src/data/
 *.log
 .DS_Store
 *.sqlite

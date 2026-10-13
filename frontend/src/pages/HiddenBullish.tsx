@@ -87,7 +87,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
           setSignals(data.signals || []);
         } else {
           // Fallback map from master data
-          const fallback = HIDDEN_BULL_COINS.map(c => ({
+          const fallback = HIDDEN_BULL_COINS.map((c: any) => ({
             symbol: c.symbol.endsWith('USDT') ? c.symbol : `${c.symbol}USDT`,
             cleanSymbol: c.symbol.replace('USDT', ''),
             price: 1.25,
