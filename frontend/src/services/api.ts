@@ -231,6 +231,7 @@ export interface LicenseInfo {
   duration_days: number;
   status: 'active' | 'expired' | 'revoked';
   active_session_id?: string;
+  current_ip?: string;
   last_active_at?: string;
   expires_at?: string;
   created_at: string;

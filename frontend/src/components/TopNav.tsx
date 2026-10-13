@@ -309,6 +309,27 @@ export const TopNav: React.FC<TopNavProps> = ({
             <span>🔵</span>
             <span>Hidden Bullish</span>
           </button>
+
+          <button
+            onClick={() => navigate('admin')}
+            style={{
+              background: currentRoute === 'admin' ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+              border: currentRoute === 'admin' ? '1px solid #38bdf8' : '1px solid transparent',
+              color: currentRoute === 'admin' ? '#38bdf8' : '#8b949e',
+              padding: '6px 12px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              borderRadius: '6px',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <span>🛡️</span>
+            <span>Admin Panel</span>
+          </button>
         </div>
 
         {/* Right Corner: License 28/30 days left badge */}

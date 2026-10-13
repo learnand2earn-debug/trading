@@ -1,61 +1,52 @@
 import React, { useEffect, useState } from 'react';
 import {
-  AlertCircle,
-  CheckCircle2,
-  Copy,
-  Key,
   KeyRound,
+  Users,
+  Copy,
   Plus,
   RotateCcw,
-  Save,
-  Settings,
-  ShieldAlert,
-  ShieldCheck,
-  Sliders,
   Trash2,
-  UserPlus,
-  Users,
-  Wrench,
-  X
+  CheckCircle2,
+  AlertCircle,
+  ShieldCheck,
+  ShieldAlert,
+  Settings,
+  X,
+  UserPlus
 } from 'lucide-react';
 import { api, UserProfile, LicenseInfo } from '../services/api.js';
 
 export const Admin: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'LICENSES' | 'STRATEGIES' | 'RISK' | 'RULES' | 'USERS' | 'AUDIT'>('LICENSES');
-  const [riskConfig, setRiskConfig] = useState<any>(null);
-  const [saveMessage, setSaveMessage] = useState('');
+  const [activeTab, setActiveTab] = useState<'LICENSES' | 'USERS' | 'RISK'>('LICENSES');
 
-  // ScalpPro License Management State
+  // License Management State
   const [licenses, setLicenses] = useState<LicenseInfo[]>([]);
   const [loadingLicenses, setLoadingLicenses] = useState(false);
   const [genDurationDays, setGenDurationDays] = useState(30);
   const [genNote, setGenNote] = useState('');
   const [genCustomKey, setGenCustomKey] = useState('');
-  const [licenseMsg, setLicenseMsg] = useState('');
+  const [licenseMsg, setLicenseMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [lastGeneratedKey, setLastGeneratedKey] = useState<{ key: string; days: number; note: string } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // User Management State
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<'ADMIN' | 'USER'>('USER');
-  const [userMsg, setUserMsg] = useState('');
+  const [userMsg, setUserMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Risk Management State
+  const [riskConfig, setRiskConfig] = useState<any>(null);
+  const [riskMsg, setRiskMsg] = useState('');
 
   useEffect(() => {
-    loadRisk();
     loadLicenses();
+    loadUsers();
+    loadRisk();
   }, []);
-
-  useEffect(() => {
-    if (activeTab === 'LICENSES') {
-      loadLicenses();
-    } else if (activeTab === 'USERS') {
-      loadUsers();
-    }
-  }, [activeTab]);
 
   const loadLicenses = async () => {
     setLoadingLicenses(true);
@@ -65,78 +56,23 @@ export const Admin: React.FC = () => {
         setLicenses(res.licenses || []);
       }
     } catch (e: any) {
-      setLicenseMsg(`Failed to load licenses: ${e.message}`);
+      setLicenseMsg({ type: 'error', text: `Failed to load licenses: ${e.message}` });
     } finally {
       setLoadingLicenses(false);
     }
   };
 
-  const handleGenerateLicense = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLicenseMsg('');
+  const loadUsers = async () => {
+    setLoadingUsers(true);
     try {
-      const res = await api.createLicense({
-        durationDays: genDurationDays,
-        note: genNote.trim() || undefined,
-        customKey: genCustomKey.trim() || undefined
-      });
-      if (res.success && res.license) {
-        setLicenseMsg(`✅ License key generated: ${res.license.license_key} (${res.license.duration_days} days)`);
-        setGenCustomKey('');
-        setGenNote('');
-        await loadLicenses();
-      } else {
-        setLicenseMsg(`❌ ${res.error || 'Failed to generate license'}`);
-      }
+      const res = await api.getUsers();
+      setUsers(res.users || []);
     } catch (e: any) {
-      setLicenseMsg(`❌ ${e.message}`);
+      setUserMsg({ type: 'error', text: `Failed to load users: ${e.message}` });
+    } finally {
+      setLoadingUsers(false);
     }
   };
-
-  const handleResetSession = async (lic: LicenseInfo) => {
-    try {
-      const res = await api.resetLicenseSession(lic.id);
-      if (res.success) {
-        setLicenseMsg(`⚡ Session reset for ${lic.license_key}. Any connected device was disconnected.`);
-        await loadLicenses();
-      }
-    } catch (e: any) {
-      setLicenseMsg(`❌ Error: ${e.message}`);
-    }
-  };
-
-  const handleRevokeLicense = async (lic: LicenseInfo) => {
-    if (!confirm(`Are you sure you want to revoke license ${lic.license_key}?`)) return;
-    try {
-      const res = await api.revokeLicense(lic.id);
-      if (res.success) {
-        setLicenseMsg(`🚫 License ${lic.license_key} has been revoked.`);
-        await loadLicenses();
-      }
-    } catch (e: any) {
-      setLicenseMsg(`❌ Error: ${e.message}`);
-    }
-  };
-
-  const handleDeleteLicense = async (lic: LicenseInfo) => {
-    if (!confirm(`Permanently delete license ${lic.license_key}?`)) return;
-    try {
-      const res = await api.deleteLicense(lic.id);
-      if (res.success) {
-        setLicenseMsg(`🗑️ License ${lic.license_key} deleted.`);
-        await loadLicenses();
-      }
-    } catch (e: any) {
-      setLicenseMsg(`❌ Error: ${e.message}`);
-    }
-  };
-
-  const handleCopyKey = (key: string) => {
-    navigator.clipboard.writeText(key);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
-  };
-
 
   const loadRisk = async () => {
     try {
@@ -147,74 +83,138 @@ export const Admin: React.FC = () => {
     }
   };
 
-  const loadUsers = async () => {
-    setLoadingUsers(true);
+  const handleGenerateLicense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLicenseMsg(null);
     try {
-      const res = await api.getUsers();
-      setUsers(res.users || []);
+      const res = await api.createLicense({
+        durationDays: genDurationDays,
+        note: genNote.trim() || undefined,
+        customKey: genCustomKey.trim() || undefined
+      });
+      if (res.success && res.license) {
+        const key = res.license.license_key;
+        setLastGeneratedKey({ key, days: res.license.duration_days, note: genNote });
+        setLicenseMsg({
+          type: 'success',
+          text: `License key generated successfully! Key: ${key} (${res.license.duration_days} days)`
+        });
+        setGenCustomKey('');
+        setGenNote('');
+        await loadLicenses();
+      } else {
+        setLicenseMsg({ type: 'error', text: res.error || 'Failed to generate license key' });
+      }
     } catch (e: any) {
-      setUserMsg(`Failed to load users: ${e.message}`);
-    } finally {
-      setLoadingUsers(false);
+      setLicenseMsg({ type: 'error', text: e.message });
+    }
+  };
+
+  const handleCopyKey = (key: string) => {
+    navigator.clipboard.writeText(key);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2500);
+  };
+
+  const handleResetSession = async (lic: LicenseInfo) => {
+    try {
+      const res = await api.resetLicenseSession(lic.id);
+      if (res.success) {
+        setLicenseMsg({
+          type: 'success',
+          text: `⚡ Session reset for ${lic.license_key}. Active browser/device unlinked.`
+        });
+        await loadLicenses();
+      }
+    } catch (e: any) {
+      setLicenseMsg({ type: 'error', text: e.message });
+    }
+  };
+
+  const handleRevokeLicense = async (lic: LicenseInfo) => {
+    if (!confirm(`Are you sure you want to revoke license ${lic.license_key}?`)) return;
+    try {
+      const res = await api.revokeLicense(lic.id);
+      if (res.success) {
+        setLicenseMsg({ type: 'success', text: `🚫 License ${lic.license_key} has been revoked.` });
+        await loadLicenses();
+      }
+    } catch (e: any) {
+      setLicenseMsg({ type: 'error', text: e.message });
+    }
+  };
+
+  const handleDeleteLicense = async (lic: LicenseInfo) => {
+    if (!confirm(`Permanently delete license ${lic.license_key}?`)) return;
+    try {
+      const res = await api.deleteLicense(lic.id);
+      if (res.success) {
+        setLicenseMsg({ type: 'success', text: `🗑️ License ${lic.license_key} deleted permanently.` });
+        await loadLicenses();
+      }
+    } catch (e: any) {
+      setLicenseMsg({ type: 'error', text: e.message });
     }
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUsername || !newEmail || !newPassword) return;
+    if (!newUsername.trim() || !newEmail.trim() || !newPassword.trim()) {
+      setUserMsg({ type: 'error', text: 'Please fill in all username, email, and password fields.' });
+      return;
+    }
 
     try {
       const res = await api.createUser({
-        username: newUsername,
-        email: newEmail,
+        username: newUsername.trim(),
+        email: newEmail.trim(),
         password: newPassword,
         role: newRole
       });
 
       if (res.success) {
-        setUserMsg(`User ${newUsername} created successfully!`);
-        setShowAddUserModal(false);
+        setUserMsg({ type: 'success', text: `✅ User "${newUsername}" created successfully!` });
         setNewUsername('');
         setNewEmail('');
         setNewPassword('');
         await loadUsers();
       } else {
-        setUserMsg(res.error || 'Failed to create user');
+        setUserMsg({ type: 'error', text: res.error || 'Failed to create user' });
       }
     } catch (e: any) {
-      setUserMsg(e.message);
+      setUserMsg({ type: 'error', text: e.message });
     }
   };
 
-  const handleToggleStatus = async (user: UserProfile) => {
+  const handleToggleUserStatus = async (user: UserProfile) => {
     const nextStatus = user.status === 'suspended' ? 'active' : 'suspended';
     try {
       const res = await api.toggleUserStatus(user.id, nextStatus);
       if (res.success) {
-        setUserMsg(`User ${user.username} status set to ${nextStatus}`);
+        setUserMsg({ type: 'success', text: `User "${user.username}" status changed to ${nextStatus}.` });
         await loadUsers();
       } else {
-        setUserMsg(res.error || 'Status change failed');
+        setUserMsg({ type: 'error', text: res.error || 'Status change failed' });
       }
     } catch (e: any) {
-      setUserMsg(e.message);
+      setUserMsg({ type: 'error', text: e.message });
     }
   };
 
   const handleDeleteUser = async (user: UserProfile) => {
-    if (!confirm(`Are you sure you want to permanently delete user ${user.username}?`)) {
+    if (!confirm(`Are you sure you want to permanently delete user "${user.username}"?`)) {
       return;
     }
     try {
       const res = await api.deleteUser(user.id);
       if (res.success) {
-        setUserMsg(`User ${user.username} deleted.`);
+        setUserMsg({ type: 'success', text: `🗑️ User "${user.username}" deleted successfully.` });
         await loadUsers();
       } else {
-        setUserMsg(res.error || 'Delete failed');
+        setUserMsg({ type: 'error', text: res.error || 'Delete failed' });
       }
     } catch (e: any) {
-      setUserMsg(e.message);
+      setUserMsg({ type: 'error', text: e.message });
     }
   };
 
@@ -222,84 +222,247 @@ export const Admin: React.FC = () => {
     if (!riskConfig) return;
     try {
       await api.updateRiskSettings(riskConfig);
-      setSaveMessage('Risk configuration successfully updated & audited.');
-      setTimeout(() => setSaveMessage(''), 3000);
+      setRiskMsg('Risk settings saved successfully.');
+      setTimeout(() => setRiskMsg(''), 3000);
     } catch (e: any) {
-      setSaveMessage(`Error: ${e.message}`);
+      setRiskMsg(`Error: ${e.message}`);
     }
   };
 
   return (
-    <div className="space-y-5 font-mono text-xs">
-      {/* Top Header */}
-      <div className="flex justify-between items-center bg-[#151a24] border border-[#232b3e] p-3 rounded-lg">
+    <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '20px 16px', color: '#e6edf3', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      {/* Top Header Card */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #0d1522 0%, #080c14 100%)',
+          border: '1px solid #1c2a42',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}
+      >
         <div>
-          <h1 className="text-sm font-bold text-white flex items-center gap-2">
-            <Settings className="w-4 h-4 text-blue-400" />
-            ADMIN CONTROL PANEL & MULTI-USER PORTAL
-          </h1>
-          <p className="text-[11px] text-gray-500">Configure parameters, manage ambiguous interpretations, risk rules & client access</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '20px' }}>🛡️</span>
+            <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.3px' }}>
+              ADMIN CONTROL PANEL
+            </h1>
+            <span
+              style={{
+                background: 'rgba(56, 189, 248, 0.15)',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                color: '#38bdf8',
+                fontSize: '11px',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '4px'
+              }}
+            >
+              Super Admin
+            </span>
+          </div>
+          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#8b949e' }}>
+            Generate customer license keys, add/remove members, and control trading access.
+          </p>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {(['LICENSES', 'STRATEGIES', 'RISK', 'RULES', 'USERS', 'AUDIT'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-3 py-1.5 rounded font-bold transition text-[11px] flex items-center gap-1 ${
-                activeTab === tab
-                  ? 'bg-emerald-600 text-white shadow'
-                  : 'bg-[#0e121a] text-gray-400 border border-[#252f44] hover:text-white'
-              }`}
-            >
-              {tab === 'LICENSES' ? '🔑 LICENSES' : tab === 'USERS' ? 'USERS & ACCESS' : tab}
-            </button>
-          ))}
+        {/* Primary Tab Navigation */}
+        <div style={{ display: 'flex', gap: '8px', background: '#06090e', padding: '4px', borderRadius: '8px', border: '1px solid #162032' }}>
+          <button
+            onClick={() => setActiveTab('LICENSES')}
+            style={{
+              background: activeTab === 'LICENSES' ? '#22c55e' : 'transparent',
+              color: activeTab === 'LICENSES' ? '#000000' : '#8b949e',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              fontWeight: 700,
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <span>🔑</span>
+            <span>License Keys</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('USERS')}
+            style={{
+              background: activeTab === 'USERS' ? '#38bdf8' : 'transparent',
+              color: activeTab === 'USERS' ? '#000000' : '#8b949e',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              fontWeight: 700,
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <span>👥</span>
+            <span>Add / Remove Users</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('RISK')}
+            style={{
+              background: activeTab === 'RISK' ? '#f59e0b' : 'transparent',
+              color: activeTab === 'RISK' ? '#000000' : '#8b949e',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              fontWeight: 700,
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <span>⚙️</span>
+            <span>System Settings</span>
+          </button>
         </div>
       </div>
 
-      {/* Tab: ScalpPro License Management & Single-Device Control */}
+      {/* ========================================================= */}
+      {/* TAB 1: LICENSE KEY GENERATOR                              */}
+      {/* ========================================================= */}
       {activeTab === 'LICENSES' && (
-        <div className="space-y-4">
-          {/* Top Banner & Generation Form */}
-          <div className="bg-[#121824] border border-[#232f44] rounded-xl p-5 shadow-xl">
-            <div className="flex justify-between items-center mb-4 pb-3 border-b border-[#232f44]">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Notification Messages */}
+          {licenseMsg && (
+            <div
+              style={{
+                padding: '12px 16px',
+                borderRadius: '8px',
+                background: licenseMsg.type === 'success' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                border: `1px solid ${licenseMsg.type === 'success' ? '#22c55e' : '#ef4444'}`,
+                color: licenseMsg.type === 'success' ? '#4ade80' : '#f87171',
+                fontSize: '13px',
+                fontWeight: 600,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}
+            >
+              <span>{licenseMsg.text}</span>
+              <button
+                onClick={() => setLicenseMsg(null)}
+                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '16px' }}
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {/* Quick Copy Box for Last Generated Key */}
+          {lastGeneratedKey && (
+            <div
+              style={{
+                background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(6, 78, 59, 0.4))',
+                border: '1px solid #22c55e',
+                borderRadius: '10px',
+                padding: '16px 20px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '12px'
+              }}
+            >
               <div>
-                <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                  <KeyRound className="w-4 h-4 text-emerald-400" />
-                  GENERATE SCALPPRO ACCESS LICENSE
-                </h2>
-                <p className="text-[11px] text-gray-400">
-                  Generate customer licenses. Enforces single-device concurrent usage: if logged in on a second device, the previous device is immediately logged out.
-                </p>
+                <div style={{ color: '#4ade80', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  🎉 Ready to Give to Customer:
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: 800, fontFamily: 'monospace', color: '#ffffff', letterSpacing: '1px', marginTop: '2px' }}>
+                  {lastGeneratedKey.key}
+                </div>
+                <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '2px' }}>
+                  Validity: <strong style={{ color: '#ffffff' }}>{lastGeneratedKey.days} Days</strong>
+                  {lastGeneratedKey.note && ` · Customer: ${lastGeneratedKey.note}`}
+                </div>
               </div>
-              <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full">
-                Single-Device Protection Active
-              </span>
+
+              <button
+                onClick={() => handleCopyKey(lastGeneratedKey.key)}
+                style={{
+                  background: copiedKey === lastGeneratedKey.key ? '#15803d' : '#22c55e',
+                  color: '#000000',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '10px 18px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 0 15px rgba(34, 197, 94, 0.4)'
+                }}
+              >
+                <Copy style={{ width: '16px', height: '16px' }} />
+                <span>{copiedKey === lastGeneratedKey.key ? 'COPIED TO CLIPBOARD!' : 'COPY LICENSE KEY'}</span>
+              </button>
+            </div>
+          )}
+
+          {/* Generator Form Card */}
+          <div
+            style={{
+              background: '#0c121d',
+              border: '1px solid #1a2538',
+              borderRadius: '12px',
+              padding: '20px',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div style={{ marginBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <KeyRound style={{ width: '18px', height: '18px', color: '#22c55e' }} />
+                GENERATE NEW LICENSE KEY
+              </h2>
+              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#8b949e' }}>
+                Select duration, write customer note, and generate a secure 1-device license key.
+              </p>
             </div>
 
-            {licenseMsg && (
-              <div className="mb-4 p-3 rounded-lg bg-[#0e241b] border border-emerald-500/40 text-emerald-300 text-xs flex justify-between items-center">
-                <span>{licenseMsg}</span>
-                <button onClick={() => setLicenseMsg('')} className="text-gray-400 hover:text-white">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-
-            <form onSubmit={handleGenerateLicense} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-              <div className="md:col-span-3">
-                <label className="text-gray-400 text-[10px] uppercase font-bold block mb-1">
-                  License Duration
+            <form onSubmit={handleGenerateLicense} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px' }}>
+                  Validity Duration
                 </label>
                 <select
                   value={genDurationDays}
                   onChange={(e) => setGenDurationDays(Number(e.target.value))}
-                  className="w-full bg-[#0b0e14] border border-[#232b3e] focus:border-emerald-500 rounded p-2 text-white font-mono text-xs focus:outline-none"
+                  style={{
+                    width: '100%',
+                    background: '#06090e',
+                    border: '1px solid #233148',
+                    color: '#ffffff',
+                    padding: '9px 12px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    outline: 'none'
+                  }}
                 >
                   <option value={7}>7 Days (Trial)</option>
                   <option value={30}>30 Days (1 Month)</option>
+                  <option value={60}>60 Days (2 Months)</option>
                   <option value={90}>90 Days (3 Months)</option>
                   <option value={180}>180 Days (6 Months)</option>
                   <option value={365}>365 Days (1 Year VIP)</option>
@@ -307,189 +470,269 @@ export const Admin: React.FC = () => {
                 </select>
               </div>
 
-              <div className="md:col-span-4">
-                <label className="text-gray-400 text-[10px] uppercase font-bold block mb-1">
-                  Client Name / Note (e.g. WhatsApp Client)
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px' }}>
+                  Customer Name / Note (e.g. WhatsApp)
                 </label>
                 <input
                   type="text"
                   value={genNote}
                   onChange={(e) => setGenNote(e.target.value)}
-                  placeholder="e.g. WhatsApp Client (+923164404787)"
-                  className="w-full bg-[#0b0e14] border border-[#232b3e] focus:border-emerald-500 rounded p-2 text-white font-mono text-xs focus:outline-none"
+                  placeholder="e.g. Ali Hassan (+92 316 4404787)"
+                  style={{
+                    width: '100%',
+                    background: '#06090e',
+                    border: '1px solid #233148',
+                    color: '#ffffff',
+                    padding: '9px 12px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
                 />
               </div>
 
-              <div className="md:col-span-3">
-                <label className="text-gray-400 text-[10px] uppercase font-bold block mb-1">
-                  Custom Key (Optional)
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px' }}>
+                  Custom Key Code (Optional)
                 </label>
                 <input
                   type="text"
                   value={genCustomKey}
                   onChange={(e) => setGenCustomKey(e.target.value.toUpperCase())}
-                  placeholder="Auto-generate if empty"
-                  className="w-full bg-[#0b0e14] border border-[#232b3e] focus:border-emerald-500 rounded p-2 text-white font-mono text-xs focus:outline-none uppercase"
+                  placeholder="Leave blank to auto-generate"
+                  style={{
+                    width: '100%',
+                    background: '#06090e',
+                    border: '1px solid #233148',
+                    color: '#ffffff',
+                    padding: '9px 12px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    outline: 'none',
+                    textTransform: 'uppercase',
+                    boxSizing: 'border-box'
+                  }}
                 />
               </div>
 
-              <div className="md:col-span-2">
+              <div>
                 <button
                   type="submit"
                   disabled={loadingLicenses}
-                  className="w-full py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-black font-extrabold text-xs shadow-[0_0_15px_rgba(16,185,129,0.3)] transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  style={{
+                    width: '100%',
+                    background: '#22c55e',
+                    color: '#000000',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '10px 16px',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    boxShadow: '0 0 15px rgba(34, 197, 94, 0.3)',
+                    transition: 'opacity 0.15s ease'
+                  }}
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus style={{ width: '16px', height: '16px' }} />
                   <span>Generate Key</span>
                 </button>
               </div>
             </form>
           </div>
 
-          {/* Licenses Stats Row */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="p-3 bg-[#121824] border border-[#232b3e] rounded-lg">
-              <span className="text-[10px] text-gray-500 uppercase font-bold">Total Issued Licenses</span>
-              <div className="text-lg font-bold text-white">{licenses.length}</div>
+          {/* Stats Bar */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+            <div style={{ background: '#0b1018', border: '1px solid #1c2738', borderRadius: '8px', padding: '12px 16px' }}>
+              <div style={{ fontSize: '11px', color: '#8b949e', fontWeight: 600 }}>Total Issued Keys</div>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: '#ffffff', marginTop: '4px' }}>{licenses.length}</div>
             </div>
-            <div className="p-3 bg-[#121824] border border-[#232b3e] rounded-lg">
-              <span className="text-[10px] text-gray-500 uppercase font-bold">Active & Valid</span>
-              <div className="text-lg font-bold text-emerald-400">
+            <div style={{ background: '#0b1018', border: '1px solid #1c2738', borderRadius: '8px', padding: '12px 16px' }}>
+              <div style={{ fontSize: '11px', color: '#8b949e', fontWeight: 600 }}>Active & Valid</div>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: '#22c55e', marginTop: '4px' }}>
                 {licenses.filter(l => l.status === 'active' && !l.isExpired).length}
               </div>
             </div>
-            <div className="p-3 bg-[#121824] border border-[#232b3e] rounded-lg">
-              <span className="text-[10px] text-gray-500 uppercase font-bold">Live Devices Online</span>
-              <div className="text-lg font-bold text-cyan-400 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+            <div style={{ background: '#0b1018', border: '1px solid #1c2738', borderRadius: '8px', padding: '12px 16px' }}>
+              <div style={{ fontSize: '11px', color: '#8b949e', fontWeight: 600 }}>Devices Currently Online</div>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: '#38bdf8', marginTop: '4px' }}>
                 {licenses.filter(l => l.isOnline).length}
               </div>
             </div>
-            <div className="p-3 bg-[#121824] border border-[#232b3e] rounded-lg">
-              <span className="text-[10px] text-gray-500 uppercase font-bold">Expired / Revoked</span>
-              <div className="text-lg font-bold text-rose-400">
+            <div style={{ background: '#0b1018', border: '1px solid #1c2738', borderRadius: '8px', padding: '12px 16px' }}>
+              <div style={{ fontSize: '11px', color: '#8b949e', fontWeight: 600 }}>Expired / Revoked</div>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: '#f87171', marginTop: '4px' }}>
                 {licenses.filter(l => l.status !== 'active' || l.isExpired).length}
               </div>
             </div>
           </div>
 
           {/* Licenses Table */}
-          <div className="bg-[#121824] border border-[#232b3e] rounded-lg overflow-hidden">
-            <div className="p-3 border-b border-[#232b3e] flex justify-between items-center">
-              <span className="font-bold text-white text-xs">ALL ISSUED SCALPPRO LICENSES</span>
+          <div style={{ background: '#0c121d', border: '1px solid #1a2538', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #1a2538', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: '#ffffff' }}>ALL ISSUED LICENSES</span>
               <button
                 onClick={loadLicenses}
-                className="text-[10px] text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 cursor-pointer"
+                style={{ background: 'transparent', border: '1px solid #233148', color: '#94a3b8', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}
               >
-                <RotateCcw className="w-3 h-3" /> Refresh List
+                Refresh List
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
                 <thead>
-                  <tr className="border-b border-[#232b3e] bg-[#0c1017] text-[10px] text-gray-400 uppercase">
-                    <th className="p-3">License Key</th>
-                    <th className="p-3">Client / Note</th>
-                    <th className="p-3">Assigned User</th>
-                    <th className="p-3">Duration & Expiry</th>
-                    <th className="p-3">Device State</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3 text-right">Actions</th>
+                  <tr style={{ background: '#070a10', color: '#8b949e', borderBottom: '1px solid #162030' }}>
+                    <th style={{ padding: '12px 16px' }}>License Key</th>
+                    <th style={{ padding: '12px 16px' }}>Customer / Note</th>
+                    <th style={{ padding: '12px 16px' }}>Duration</th>
+                    <th style={{ padding: '12px 16px' }}>Device Session</th>
+                    <th style={{ padding: '12px 16px' }}>Status</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1e2535] text-xs">
-                  {licenses.map(lic => (
-                    <tr key={lic.id} className="hover:bg-[#161d2b] transition">
-                      <td className="p-3 font-mono font-bold text-white">
-                        <div className="flex items-center gap-2">
-                          <span>{lic.license_key}</span>
-                          <button
-                            onClick={() => handleCopyKey(lic.license_key)}
-                            className="p-1 rounded bg-[#1c2436] hover:bg-emerald-500/20 text-gray-400 hover:text-emerald-400 transition cursor-pointer"
-                            title="Copy License Key"
-                          >
-                            {copiedKey === lic.license_key ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                      <td className="p-3 text-gray-300 font-medium">
-                        {lic.note || 'ScalpPro Trader'}
-                      </td>
-                      <td className="p-3 font-mono text-cyan-300">
-                        {lic.assigned_username || (
-                          <span className="text-gray-500 italic">Unbound (Any user can activate)</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-gray-400">
-                        <div>{lic.duration_days} Days</div>
-                        <div className="text-[10px] text-gray-500">
-                          {lic.expires_at ? new Date(lic.expires_at).toLocaleDateString() : 'Starts on first login'}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        {lic.isOnline ? (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            1 Device Online
-                          </span>
-                        ) : lic.active_session_id ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-gray-800 text-gray-400">
-                            Session Active (Idle)
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-gray-600">No device connected</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          lic.status === 'active' && !lic.isExpired
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                            : 'bg-red-500/20 text-red-400 border border-red-500/40'
-                        }`}>
-                          {lic.isExpired ? 'EXPIRED' : lic.status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {lic.active_session_id && (
-                            <button
-                              onClick={() => handleResetSession(lic)}
-                              className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-bold transition cursor-pointer"
-                              title="Force disconnect the currently connected device"
-                            >
-                              Kick Device
-                            </button>
-                          )}
-                          {lic.status === 'active' && (
-                            <button
-                              onClick={() => handleRevokeLicense(lic)}
-                              className="px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] font-bold transition cursor-pointer"
-                            >
-                              Revoke
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteLicense(lic)}
-                            className="p-1 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition cursor-pointer"
-                            title="Delete License"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {licenses.length === 0 && (
+                <tbody>
+                  {licenses.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-6 text-center text-gray-500">
-                        No licenses generated yet. Use the form above to issue your first license key.
+                      <td colSpan={6} style={{ padding: '30px', textAlign: 'center', color: '#8b949e' }}>
+                        No license keys created yet. Generate one above to give access to users.
                       </td>
                     </tr>
+                  ) : (
+                    licenses.map(lic => {
+                      const isExpired = lic.isExpired;
+                      const isActive = lic.status === 'active' && !isExpired;
+
+                      return (
+                        <tr key={lic.id} style={{ borderBottom: '1px solid #131a26' }}>
+                          <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontWeight: 700, color: '#ffffff' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span>{lic.license_key}</span>
+                              <button
+                                onClick={() => handleCopyKey(lic.license_key)}
+                                title="Copy key"
+                                style={{
+                                  background: copiedKey === lic.license_key ? '#22c55e' : '#162032',
+                                  color: copiedKey === lic.license_key ? '#000000' : '#38bdf8',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  padding: '2px 6px',
+                                  cursor: 'pointer',
+                                  fontSize: '10px',
+                                  fontWeight: 700
+                                }}
+                              >
+                                {copiedKey === lic.license_key ? '✓ Copied' : 'Copy'}
+                              </button>
+                            </div>
+                          </td>
+
+                          <td style={{ padding: '12px 16px', color: '#cbd5e1' }}>
+                            {lic.note || <span style={{ color: '#64748b' }}>None</span>}
+                          </td>
+
+                          <td style={{ padding: '12px 16px', color: '#cbd5e1' }}>
+                            <div>{lic.duration_days} Days</div>
+                            {lic.expires_at && (
+                              <div style={{ fontSize: '10px', color: '#64748b' }}>
+                                Exp: {new Date(lic.expires_at).toLocaleDateString()}
+                              </div>
+                            )}
+                          </td>
+
+                          <td style={{ padding: '12px 16px' }}>
+                            {lic.isOnline ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#38bdf8', fontSize: '11px', fontWeight: 600 }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#38bdf8' }} />
+                                Connected ({lic.current_ip || 'Device'})
+                              </span>
+                            ) : lic.active_session_id ? (
+                              <span style={{ color: '#94a3b8', fontSize: '11px' }}>Bound to device</span>
+                            ) : (
+                              <span style={{ color: '#64748b', fontSize: '11px' }}>Unassigned</span>
+                            )}
+                          </td>
+
+                          <td style={{ padding: '12px 16px' }}>
+                            {isActive ? (
+                              <span style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '11px' }}>
+                                ACTIVE
+                              </span>
+                            ) : isExpired ? (
+                              <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#f87171', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '11px' }}>
+                                EXPIRED
+                              </span>
+                            ) : (
+                              <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#f87171', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '11px' }}>
+                                REVOKED
+                              </span>
+                            )}
+                          </td>
+
+                          <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                            <div style={{ display: 'inline-flex', gap: '6px' }}>
+                              <button
+                                onClick={() => handleResetSession(lic)}
+                                title="Disconnect current device so customer can log in on another phone/PC"
+                                style={{
+                                  background: '#162032',
+                                  border: '1px solid #28374f',
+                                  color: '#38bdf8',
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '11px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                              >
+                                <RotateCcw style={{ width: '12px', height: '12px' }} />
+                                <span>Reset Device</span>
+                              </button>
+
+                              {isActive && (
+                                <button
+                                  onClick={() => handleRevokeLicense(lic)}
+                                  title="Block customer access immediately"
+                                  style={{
+                                    background: '#281318',
+                                    border: '1px solid #5a1e24',
+                                    color: '#f87171',
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    fontSize: '11px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Revoke
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => handleDeleteLicense(lic)}
+                                title="Permanently delete license"
+                                style={{
+                                  background: '#201014',
+                                  border: '1px solid #451b22',
+                                  color: '#ef4444',
+                                  padding: '4px 6px',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <Trash2 style={{ width: '13px', height: '13px' }} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -498,399 +741,378 @@ export const Admin: React.FC = () => {
         </div>
       )}
 
-
-      {/* Tab 1: Strategies & Ambiguous Rules Selector */}
-      {activeTab === 'STRATEGIES' && (
-        <div className="bg-[#151a24] border border-[#232b3e] rounded-lg p-4 space-y-4">
-          <div className="flex justify-between items-center pb-2 border-b border-[#232b3e]">
-            <span className="font-bold text-white text-xs">SOURCE STRATEGY VERSIONS & AMBIGUOUS RULES</span>
-            <span className="text-emerald-400 text-[10px]">All 7 Strategies Active v1.0</span>
-          </div>
-
-          <div className="space-y-3">
-            {[
-              {
-                name: '1. Price Action',
-                version: 'v1.0',
-                ambiguous: 'Liquidity Proximity Tolerance',
-                options: ['Within 1.5% of Price (Recommended)', 'Within 2.5% of Price'],
-                defaultChoice: 'Within 1.5% of Price (Recommended)'
-              },
-              {
-                name: '3. Gainers Method',
-                version: 'v1.0',
-                ambiguous: 'Post-Pump Seller Activity Interpretation',
-                options: ['Seller Turnover Active (> 25% 24h avg)', 'Pullback shallower than 38.2% Fib'],
-                defaultChoice: 'Seller Turnover Active (> 25% 24h avg)'
-              },
-              {
-                name: '4. Hidden Bullish',
-                version: 'v1.0',
-                ambiguous: '10-Candle Downward Movement Threshold',
-                options: ['Min 0.8% Downward Structure (Source Default)', 'Min 1.2% Downward Structure'],
-                defaultChoice: 'Min 0.8% Downward Structure (Source Default)'
-              },
-              {
-                name: '7. ICT Method',
-                version: 'v1.0',
-                ambiguous: 'Trend Line Interaction Direction',
-                options: ['Breakout above descending trendline', 'Support bounce off ascending trendline'],
-                defaultChoice: 'Breakout above descending trendline'
-              }
-            ].map((item, idx) => (
-              <div key={idx} className="p-3.5 bg-[#0e121a] border border-[#252f44] rounded-lg space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-white text-xs">{item.name} ({item.version})</span>
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold border border-amber-500/30">
-                    Ambiguous Source Rule
-                  </span>
-                </div>
-                <div className="text-gray-400 text-[11px]">
-                  Configured Ambiguity: <strong className="text-gray-200">{item.ambiguous}</strong>
-                </div>
-                <div className="pt-1">
-                  <label className="block text-gray-500 text-[10px] uppercase mb-1">Selected Interpretation</label>
-                  <select
-                    defaultValue={item.defaultChoice}
-                    className="w-full bg-[#151a24] border border-[#232b3e] rounded p-2 text-emerald-400 font-semibold text-xs focus:outline-none"
-                  >
-                    {item.options.map((opt, oIdx) => (
-                      <option key={oIdx} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 2: Risk Settings */}
-      {activeTab === 'RISK' && riskConfig && (
-        <div className="bg-[#151a24] border border-[#232b3e] rounded-lg p-4 space-y-4">
-          <div className="flex justify-between items-center pb-2 border-b border-[#232b3e]">
-            <span className="font-bold text-white text-xs">CENTRAL RISK DEFENSE PARAMETERS</span>
-            <span className="badge-warn">ENGINEERING RISK DEFAULTS</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-400 text-[10px] uppercase mb-1">Max Position Size USD</label>
-              <input
-                type="number"
-                value={riskConfig.maxPositionSizeUSD}
-                onChange={e => setRiskConfig({ ...riskConfig, maxPositionSizeUSD: Number(e.target.value) })}
-                className="w-full bg-[#0e121a] border border-[#252f44] rounded p-2 text-white text-xs"
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-400 text-[10px] uppercase mb-1">Max Simultaneous Open Positions</label>
-              <input
-                type="number"
-                value={riskConfig.maxSimultaneousTrades}
-                onChange={e => setRiskConfig({ ...riskConfig, maxSimultaneousTrades: Number(e.target.value) })}
-                className="w-full bg-[#0e121a] border border-[#252f44] rounded p-2 text-white text-xs"
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-400 text-[10px] uppercase mb-1">Daily Loss Limit %</label>
-              <input
-                type="number"
-                step="0.1"
-                value={riskConfig.dailyLossLimitPct}
-                onChange={e => setRiskConfig({ ...riskConfig, dailyLossLimitPct: Number(e.target.value) })}
-                className="w-full bg-[#0e121a] border border-[#252f44] rounded p-2 text-white text-xs"
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-400 text-[10px] uppercase mb-1">Symbol Cooldown (Minutes)</label>
-              <input
-                type="number"
-                value={riskConfig.cooldownMinutes}
-                onChange={e => setRiskConfig({ ...riskConfig, cooldownMinutes: Number(e.target.value) })}
-                className="w-full bg-[#0e121a] border border-[#252f44] rounded p-2 text-white text-xs"
-              />
-            </div>
-          </div>
-
-          {saveMessage && <div className="text-emerald-400 text-xs p-2 bg-emerald-950/30 rounded border border-emerald-500/30">{saveMessage}</div>}
-
-          <div className="pt-2 flex justify-end">
-            <button
-              onClick={handleSaveRisk}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded flex items-center gap-1.5"
-            >
-              <Save className="w-3.5 h-3.5" /> Save Risk Settings
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Tab 3: Visual Rule Builder (Prompt Section 55) */}
-      {activeTab === 'RULES' && (
-        <div className="bg-[#151a24] border border-[#232b3e] rounded-lg p-4 space-y-4">
-          <div className="flex justify-between items-center pb-2 border-b border-[#232b3e]">
-            <span className="font-bold text-white text-xs">VISUAL STRATEGY RULE BUILDER (IF / AND / THEN)</span>
-            <span className="badge-info">Safe Machine-Readable Rules</span>
-          </div>
-
-          <div className="p-4 bg-[#0e121a] border border-[#252f44] rounded-lg space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 bg-blue-600 text-white font-bold rounded text-[10px]">IF</span>
-              <span className="text-white">1D Trend EQUALS 'UPTREND'</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 bg-blue-600 text-white font-bold rounded text-[10px]">AND</span>
-              <span className="text-white">1H RSI BETWEEN 25 AND 40</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 bg-blue-600 text-white font-bold rounded text-[10px]">AND</span>
-              <span className="text-white">30M RSI LEADS POSITIVELY</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 bg-blue-600 text-white font-bold rounded text-[10px]">AND</span>
-              <span className="text-white">1H Support EQUALS 'VALID'</span>
-            </div>
-            <div className="pt-2 border-t border-[#1b2333] flex items-center gap-2">
-              <span className="px-2 py-0.5 bg-emerald-600 text-white font-bold rounded text-[10px]">THEN</span>
-              <span className="text-emerald-400 font-bold">GENERATE SIGNAL (+1% TARGET PROFIT)</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tab: Users & Access Management */}
+      {/* ========================================================= */}
+      {/* TAB 2: USER MANAGEMENT (ADD & REMOVE USERS)               */}
+      {/* ========================================================= */}
       {activeTab === 'USERS' && (
-        <div className="bg-[#151a24] border border-[#232b3e] rounded-lg p-4 space-y-4">
-          <div className="flex justify-between items-center pb-2 border-b border-[#232b3e]">
-            <div>
-              <span className="font-bold text-white text-xs flex items-center gap-2">
-                <Users className="w-4 h-4 text-blue-400" />
-                CLIENT PORTALS & USER ACCESS MANAGEMENT
-              </span>
-              <p className="text-[11px] text-gray-400 mt-0.5">
-                Manage accounts who can log in to their private portal and attach their Binance accounts
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowAddUserModal(true)}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold text-xs flex items-center gap-1.5 shadow transition"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              Invite / Add User
-            </button>
-          </div>
-
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Notification Messages */}
           {userMsg && (
-            <div className="p-3 bg-blue-950/40 border border-blue-500/40 rounded text-blue-200 text-xs flex justify-between items-center">
-              <span>{userMsg}</span>
-              <button onClick={() => setUserMsg('')} className="text-gray-400 hover:text-white font-bold">×</button>
+            <div
+              style={{
+                padding: '12px 16px',
+                borderRadius: '8px',
+                background: userMsg.type === 'success' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                border: `1px solid ${userMsg.type === 'success' ? '#22c55e' : '#ef4444'}`,
+                color: userMsg.type === 'success' ? '#4ade80' : '#f87171',
+                fontSize: '13px',
+                fontWeight: 600,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}
+            >
+              <span>{userMsg.text}</span>
+              <button
+                onClick={() => setUserMsg(null)}
+                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '16px' }}
+              >
+                ×
+              </button>
             </div>
           )}
 
+          {/* Add New User Card */}
+          <div
+            style={{
+              background: '#0c121d',
+              border: '1px solid #1a2538',
+              borderRadius: '12px',
+              padding: '20px',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div style={{ marginBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <UserPlus style={{ width: '18px', height: '18px', color: '#38bdf8' }} />
+                ADD NEW MEMBER / USER
+              </h2>
+              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#8b949e' }}>
+                Create a login account for a user or admin.
+              </p>
+            </div>
+
+            <form onSubmit={handleCreateUser} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px' }}>
+                  Username
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value)}
+                  placeholder="e.g. dawood_trader"
+                  style={{
+                    width: '100%',
+                    background: '#06090e',
+                    border: '1px solid #233148',
+                    color: '#ffffff',
+                    padding: '9px 12px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px' }}>
+                  Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="e.g. client@example.com"
+                  style={{
+                    width: '100%',
+                    background: '#06090e',
+                    border: '1px solid #233148',
+                    color: '#ffffff',
+                    padding: '9px 12px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px' }}>
+                  Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="••••••••"
+                  style={{
+                    width: '100%',
+                    background: '#06090e',
+                    border: '1px solid #233148',
+                    color: '#ffffff',
+                    padding: '9px 12px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px' }}>
+                  Role
+                </label>
+                <select
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value as 'ADMIN' | 'USER')}
+                  style={{
+                    width: '100%',
+                    background: '#06090e',
+                    border: '1px solid #233148',
+                    color: '#ffffff',
+                    padding: '9px 12px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    outline: 'none'
+                  }}
+                >
+                  <option value="USER">USER (Regular Member)</option>
+                  <option value="ADMIN">ADMIN (Full Admin Access)</option>
+                </select>
+              </div>
+
+              <div>
+                <button
+                  type="submit"
+                  disabled={loadingUsers}
+                  style={{
+                    width: '100%',
+                    background: '#38bdf8',
+                    color: '#000000',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '10px 16px',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    boxShadow: '0 0 15px rgba(56, 189, 248, 0.3)',
+                    transition: 'opacity 0.15s ease'
+                  }}
+                >
+                  <Plus style={{ width: '16px', height: '16px' }} />
+                  <span>Create User</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
           {/* Users Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-[#232b3e] text-gray-400 text-[10px] uppercase font-bold bg-[#0e121a]">
-                  <th className="py-2.5 px-3">User</th>
-                  <th className="py-2.5 px-3">Email</th>
-                  <th className="py-2.5 px-3">Role</th>
-                  <th className="py-2.5 px-3">Binance Attached</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1e2638] text-[11px]">
-                {loadingUsers ? (
-                  <tr>
-                    <td colSpan={6} className="py-6 text-center text-gray-500">
-                      Loading registered users...
-                    </td>
+          <div style={{ background: '#0c121d', border: '1px solid #1a2538', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #1a2538', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: '#ffffff' }}>REGISTERED USERS & MEMBERS</span>
+              <button
+                onClick={loadUsers}
+                style={{ background: 'transparent', border: '1px solid #233148', color: '#94a3b8', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}
+              >
+                Refresh List
+              </button>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: '#070a10', color: '#8b949e', borderBottom: '1px solid #162030' }}>
+                    <th style={{ padding: '12px 16px' }}>Username</th>
+                    <th style={{ padding: '12px 16px' }}>Email</th>
+                    <th style={{ padding: '12px 16px' }}>Role</th>
+                    <th style={{ padding: '12px 16px' }}>Status</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
                   </tr>
-                ) : users.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-6 text-center text-gray-500">
-                      No users found.
-                    </td>
-                  </tr>
-                ) : (
-                  users.map(u => (
-                    <tr key={u.id} className="hover:bg-[#192130] transition">
-                      <td className="py-2.5 px-3 font-bold text-white flex items-center gap-2">
-                        <div className="w-6 h-6 rounded bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px]">
-                          {u.username.slice(0, 1).toUpperCase()}
-                        </div>
-                        <span>{u.username}</span>
+                </thead>
+                <tbody>
+                  {users.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ padding: '30px', textAlign: 'center', color: '#8b949e' }}>
+                        No users found.
                       </td>
-                      <td className="py-2.5 px-3 text-gray-300 font-mono text-[10px]">{u.email}</td>
-                      <td className="py-2.5 px-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          u.role === 'ADMIN'
-                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                            : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                        }`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        {u.binance_connected ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                            <CheckCircle2 className="w-3 h-3" />
-                            Connected
+                    </tr>
+                  ) : (
+                    users.map(u => (
+                      <tr key={u.id} style={{ borderBottom: '1px solid #131a26' }}>
+                        <td style={{ padding: '12px 16px', fontWeight: 700, color: '#ffffff' }}>
+                          {u.username}
+                        </td>
+                        <td style={{ padding: '12px 16px', color: '#cbd5e1' }}>
+                          {u.email}
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span
+                            style={{
+                              background: u.role === 'ADMIN' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+                              color: u.role === 'ADMIN' ? '#38bdf8' : '#94a3b8',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 700
+                            }}
+                          >
+                            {u.role}
                           </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-800 text-gray-400 border border-gray-700">
-                            Not Attached
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span
+                            style={{
+                              background: u.status === 'suspended' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                              color: u.status === 'suspended' ? '#f87171' : '#22c55e',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 700
+                            }}
+                          >
+                            {u.status === 'suspended' ? 'SUSPENDED' : 'ACTIVE'}
                           </span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          u.status === 'suspended'
-                            ? 'bg-red-500/20 text-red-300 border border-red-500/30'
-                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                        }`}>
-                          {u.status === 'suspended' ? 'SUSPENDED' : 'ACTIVE'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right space-x-2">
-                        {u.username !== 'admin' && (
-                          <>
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', gap: '8px' }}>
                             <button
-                              onClick={() => handleToggleStatus(u)}
-                              className={`px-2 py-1 rounded text-[10px] font-bold transition ${
-                                u.status === 'suspended'
-                                  ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-900/60'
-                                  : 'bg-amber-950/40 text-amber-300 border border-amber-500/40 hover:bg-amber-900/60'
-                              }`}
+                              onClick={() => handleToggleUserStatus(u)}
+                              style={{
+                                background: u.status === 'suspended' ? '#14532d' : '#281318',
+                                border: '1px solid transparent',
+                                color: u.status === 'suspended' ? '#4ade80' : '#f87171',
+                                padding: '4px 10px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                cursor: 'pointer'
+                              }}
                             >
                               {u.status === 'suspended' ? 'Activate' : 'Suspend'}
                             </button>
+
                             <button
                               onClick={() => handleDeleteUser(u)}
-                              className="px-2 py-1 rounded text-[10px] font-bold bg-red-950/40 text-red-300 border border-red-500/40 hover:bg-red-900/60 transition"
+                              title="Permanently remove user"
+                              style={{
+                                background: '#3b0d11',
+                                border: '1px solid #7f1d1d',
+                                color: '#ef4444',
+                                padding: '4px 10px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
                             >
-                              Delete
+                              <Trash2 style={{ width: '13px', height: '13px' }} />
+                              <span>Remove</span>
                             </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Add User Modal */}
-          {showAddUserModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono">
-              <div className="bg-[#121722] border border-[#232b3e] w-full max-w-md rounded-xl p-5 shadow-2xl space-y-4">
-                <div className="flex justify-between items-center pb-2 border-b border-[#232b3e]">
-                  <h3 className="font-bold text-white text-xs flex items-center gap-2">
-                    <UserPlus className="w-4 h-4 text-blue-400" />
-                    CREATE NEW USER / CLIENT ACCESS
-                  </h3>
-                  <button onClick={() => setShowAddUserModal(false)} className="text-gray-400 hover:text-white">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <form onSubmit={handleCreateUser} className="space-y-3 text-xs">
-                  <div>
-                    <label className="text-gray-400 text-[10px] uppercase font-bold block mb-1">Username</label>
-                    <input
-                      type="text"
-                      required
-                      value={newUsername}
-                      onChange={(e) => setNewUsername(e.target.value)}
-                      placeholder="client_name"
-                      className="w-full bg-[#0b0e14] border border-[#232b3e] focus:border-blue-500 rounded p-2 text-white font-mono focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-gray-400 text-[10px] uppercase font-bold block mb-1">Email</label>
-                    <input
-                      type="email"
-                      required
-                      value={newEmail}
-                      onChange={(e) => setNewEmail(e.target.value)}
-                      placeholder="client@trading.com"
-                      className="w-full bg-[#0b0e14] border border-[#232b3e] focus:border-blue-500 rounded p-2 text-white font-mono focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-gray-400 text-[10px] uppercase font-bold block mb-1">Temporary Password</label>
-                    <input
-                      type="password"
-                      required
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-[#0b0e14] border border-[#232b3e] focus:border-blue-500 rounded p-2 text-white font-mono focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-gray-400 text-[10px] uppercase font-bold block mb-1">Role</label>
-                    <select
-                      value={newRole}
-                      onChange={(e) => setNewRole(e.target.value as 'ADMIN' | 'USER')}
-                      className="w-full bg-[#0b0e14] border border-[#232b3e] rounded p-2 text-white font-mono focus:outline-none"
-                    >
-                      <option value="USER">USER (Client Portal with private Binance key)</option>
-                      <option value="ADMIN">ADMIN (Full platform & user control)</option>
-                    </select>
-                  </div>
-
-                  <div className="pt-2 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowAddUserModal(false)}
-                      className="flex-1 py-2 rounded bg-[#1e2535] text-gray-300 font-bold hover:bg-[#283247] transition"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="flex-1 py-2 rounded bg-blue-600 text-white font-bold hover:bg-blue-500 shadow transition"
-                    >
-                      Create User
-                    </button>
-                  </div>
-                </form>
-              </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
         </div>
       )}
 
-      {/* Tab 4: Audit Logs */}
-      {activeTab === 'AUDIT' && (
-        <div className="bg-[#151a24] border border-[#232b3e] rounded-lg p-4 space-y-3">
-          <span className="font-bold text-white text-xs">SECURITY & RISK AUDIT LOG</span>
-          <div className="space-y-2 max-h-72 overflow-y-auto">
-            {[
-              { action: 'INITIALIZE_SYSTEM', actor: 'system', time: '12:29:25', details: 'All 7 strategies seeded v1.0' },
-              { action: 'ENCRYPT_CREDENTIALS', actor: 'admin', time: '12:35:40', details: 'AES-256-GCM encryption keys active' },
-              { action: 'KILL_SWITCH_TESTED', actor: 'admin', time: '12:40:10', details: 'Emergency circuit verified' },
-              { action: 'RISK_ENGINE_CHECK', actor: 'RiskAgent', time: '12:45:00', details: 'Max 3 positions verified' }
-            ].map((log, i) => (
-              <div key={i} className="p-2.5 bg-[#0e121a] border border-[#222b3d] rounded flex justify-between items-center">
-                <div>
-                  <span className="font-bold text-white">{log.action}</span>
-                  <div className="text-[10px] text-gray-500">{log.details}</div>
+      {/* ========================================================= */}
+      {/* TAB 3: SYSTEM SETTINGS                                    */}
+      {/* ========================================================= */}
+      {activeTab === 'RISK' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {riskMsg && (
+            <div style={{ padding: '12px 16px', borderRadius: '8px', background: 'rgba(34, 197, 94, 0.12)', border: '1px solid #22c55e', color: '#4ade80', fontSize: '13px', fontWeight: 600 }}>
+              {riskMsg}
+            </div>
+          )}
+
+          <div style={{ background: '#0c121d', border: '1px solid #1a2538', borderRadius: '12px', padding: '20px' }}>
+            <h2 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Settings style={{ width: '18px', height: '18px', color: '#f59e0b' }} />
+              PLATFORM RISK CONTROLS & EMERGENCY KILL SWITCH
+            </h2>
+
+            {riskConfig ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px' }}>
+                      Max Open Positions
+                    </label>
+                    <input
+                      type="number"
+                      value={riskConfig.maxOpenPositions || 3}
+                      onChange={(e) => setRiskConfig({ ...riskConfig, maxOpenPositions: Number(e.target.value) })}
+                      style={{ width: '100%', background: '#06090e', border: '1px solid #233148', color: '#ffffff', padding: '9px 12px', borderRadius: '6px', fontSize: '13px', outline: 'none' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px' }}>
+                      Daily Drawdown Limit (%)
+                    </label>
+                    <input
+                      type="number"
+                      value={riskConfig.dailyDrawdownLimit || 5}
+                      onChange={(e) => setRiskConfig({ ...riskConfig, dailyDrawdownLimit: Number(e.target.value) })}
+                      style={{ width: '100%', background: '#06090e', border: '1px solid #233148', color: '#ffffff', padding: '9px 12px', borderRadius: '6px', fontSize: '13px', outline: 'none' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px' }}>
+                      Max Account Leverage
+                    </label>
+                    <input
+                      type="number"
+                      value={riskConfig.maxAccountLeverage || 5}
+                      onChange={(e) => setRiskConfig({ ...riskConfig, maxAccountLeverage: Number(e.target.value) })}
+                      style={{ width: '100%', background: '#06090e', border: '1px solid #233148', color: '#ffffff', padding: '9px 12px', borderRadius: '6px', fontSize: '13px', outline: 'none' }}
+                    />
+                  </div>
                 </div>
-                <div className="text-[10px] text-gray-400">{log.time}</div>
+
+                <div>
+                  <button
+                    onClick={handleSaveRisk}
+                    style={{
+                      background: '#f59e0b',
+                      color: '#000000',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '10px 20px',
+                      fontWeight: 800,
+                      fontSize: '13px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Save Risk Configuration
+                  </button>
+                </div>
               </div>
-            ))}
+            ) : (
+              <div style={{ color: '#8b949e', fontSize: '12px' }}>Loading system configuration...</div>
+            )}
           </div>
         </div>
       )}
