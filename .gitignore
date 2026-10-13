@@ -4,6 +4,7 @@ dist/
 **/dist/
 .env
 .env*
+!.env.example
 /data/
 !frontend/src/data/
 *.log
