@@ -2,6 +2,9 @@ import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { apiRouter } from './routes/api.js';
 import { getDb } from './database/db.js';
@@ -16,14 +19,52 @@ import { notifySignal, notifyInfo, isTelegramConfigured } from './notifications/
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 4000;
+const HOST = process.env.HOST || '0.0.0.0';
 
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // Mount API router
 app.use('/api', apiRouter);
+
+// Check for frontend static build in multiple relative locations (for unified Render deployment)
+const possibleDistPaths = [
+  path.resolve(__dirname, '../../frontend/dist'),
+  path.resolve(process.cwd(), 'frontend/dist'),
+  path.resolve(process.cwd(), '../frontend/dist'),
+  path.resolve(__dirname, '../frontend/dist')
+];
+const frontendDist = possibleDistPaths.find(p => fs.existsSync(p));
+
+if (frontendDist) {
+  console.log(`[Static] Serving frontend from: ${frontendDist}`);
+  app.use(express.static(frontendDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+} else {
+  // If frontend is not built, provide a helpful health landing page for root
+  app.get('/', (_req, res) => {
+    res.json({
+      status: 'ApexCrypto Pro API & WebSocket Gateway Running',
+      version: '1.0.0',
+      endpoints: {
+        health: '/api/health',
+        strategies: '/api/strategies',
+        liveOverview: '/api/market/live-overview',
+        websocket: '/ws'
+      }
+    });
+  });
+}
 
 const server = http.createServer(app);
 
@@ -154,10 +195,10 @@ async function startAutomatedScannerLoop() {
   }, 15000);
 }
 
-server.listen(PORT, async () => {
+server.listen(Number(PORT), HOST, async () => {
   console.log(`=======================================================`);
-  console.log(` ApexCrypto Pro Server running on http://localhost:${PORT}`);
-  console.log(` WebSocket Gateway at ws://localhost:${PORT}/ws`);
+  console.log(` ApexCrypto Pro Server running on http://${HOST}:${PORT}`);
+  console.log(` WebSocket Gateway at ws://${HOST}:${PORT}/ws`);
   console.log(`=======================================================`);
 
   // Initialize DB and run scanner

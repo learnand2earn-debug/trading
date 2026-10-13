@@ -1,0 +1,43 @@
+services:
+  # ====================================================================
+  # ApexCrypto Pro: All-in-One Autonomous Trading Platform on Render
+  # Runs backend API, WebSockets (/ws), and serves the React UI frontend
+  # ====================================================================
+  - type: web
+    name: apexcrypto-trading-platform
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: HOST
+        value: 0.0.0.0
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      # PERSIST_DB: If true, PGlite stores data in ./data/pglite
+      - key: PERSIST_DB
+        value: "false"
+      # Optional: External/Managed Postgres Database URL
+      # If provided, the platform automatically switches from WASM PGlite to PostgreSQL with SSL.
+      # - key: DATABASE_URL
+      #   fromDatabase:
+      #     name: apexcrypto-db
+      #     property: connectionString
+      # Optional Binance & Notification credentials:
+      # - key: BINANCE_API_KEY
+      #   sync: false
+      # - key: BINANCE_API_SECRET
+      #   sync: false
+      # - key: TELEGRAM_BOT_TOKEN
+      #   sync: false
+      # - key: TELEGRAM_CHAT_ID
+      #   sync: false

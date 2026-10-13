@@ -23,7 +23,11 @@ class PostgresDatabase implements IDatabase {
   private pool: pg.Pool;
 
   constructor(connectionString: string) {
-    this.pool = new pg.Pool({ connectionString });
+    const isLocalhost = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+    this.pool = new pg.Pool({
+      connectionString,
+      ssl: isLocalhost ? false : { rejectUnauthorized: false }
+    });
   }
 
   async query<T = any>(sql: string, params?: any[]): Promise<QueryResult<T>> {
@@ -71,11 +75,17 @@ export async function getDb(): Promise<IDatabase> {
     const databaseUrl = process.env.DATABASE_URL;
     let instance: IDatabase;
     if (databaseUrl && !databaseUrl.includes('pglite')) {
-      console.log('[Database] Connecting to PostgreSQL via pg Pool...');
+      console.log('[Database] Connecting to PostgreSQL via pg Pool (with SSL)...');
       instance = new PostgresDatabase(databaseUrl);
     } else {
       console.log('[Database] Initializing in-process PostgreSQL engine via PGlite (WASM)...');
-      instance = new PGliteDatabase(); // in-memory WASM Postgres: ultra fast, completely thread-safe
+      const dataDir = process.env.DATABASE_DIR || (process.env.PERSIST_DB === 'true' ? path.resolve(process.cwd(), 'data/pglite') : undefined);
+      if (dataDir && !fs.existsSync(dataDir)) {
+        try {
+          fs.mkdirSync(dataDir, { recursive: true });
+        } catch (e) {}
+      }
+      instance = new PGliteDatabase(dataDir);
     }
 
     await initializeSchemaAndSeeds(instance);
@@ -87,8 +97,18 @@ export async function getDb(): Promise<IDatabase> {
 }
 
 async function initializeSchemaAndSeeds(db: IDatabase) {
-  const schemaPath = path.resolve(__dirname, 'schema.sql');
-  if (fs.existsSync(schemaPath)) {
+  const possiblePaths = [
+    path.resolve(__dirname, 'schema.sql'),
+    path.resolve(__dirname, '../database/schema.sql'),
+    path.resolve(__dirname, '../../src/database/schema.sql'),
+    path.resolve(process.cwd(), 'src/database/schema.sql'),
+    path.resolve(process.cwd(), 'backend/src/database/schema.sql'),
+    path.resolve(process.cwd(), 'dist/database/schema.sql'),
+    path.resolve(process.cwd(), 'backend/dist/database/schema.sql')
+  ];
+  const schemaPath = possiblePaths.find(p => fs.existsSync(p));
+  if (schemaPath) {
+    console.log(`[Database] Applying schema migrations from: ${schemaPath}`);
     const schemaSql = fs.readFileSync(schemaPath, 'utf8');
     
     if (db.exec) {

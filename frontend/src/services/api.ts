@@ -263,6 +263,13 @@ export interface LiveOverviewResponse {
   };
 }
 
+export const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+
+function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const url = input.startsWith('http') ? input : `${API_BASE}${input.startsWith('/') ? input : `/${input}`}`;
+  return fetch(url, init);
+}
+
 export const api = {
   async getLiveOverview(fresh?: boolean, timeframe?: string): Promise<LiveOverviewResponse> {
     const params = new URLSearchParams();
@@ -270,18 +277,18 @@ export const api = {
     if (timeframe) params.set('timeframe', timeframe);
     params.set('t', Date.now().toString());
     const query = `?${params.toString()}`;
-    const res = await fetch(`/api/market/live-overview${query}`);
+    const res = await apiFetch(`/api/market/live-overview${query}`);
     return res.json();
   },
 
   async getHealth() {
-    const res = await fetch('/api/health');
+    const res = await apiFetch('/api/health');
     return res.json();
   },
 
   async getScanner(fresh?: boolean): Promise<{ rows: ScannerRow[]; timestamp: number }> {
     const query = fresh ? `?fresh=1&t=${Date.now()}` : '';
-    const res = await fetch(`/api/market/scanner${query}`);
+    const res = await apiFetch(`/api/market/scanner${query}`);
     return res.json();
   },
 
@@ -295,7 +302,7 @@ export const api = {
     if (options?.rsiMax !== undefined) params.set('rsiMax', options.rsiMax.toString());
     if (options?.fresh) params.set('fresh', '1');
     params.set('t', Date.now().toString());
-    const res = await fetch(`/api/market/v1-scanner?${params.toString()}`);
+    const res = await apiFetch(`/api/market/v1-scanner?${params.toString()}`);
     return res.json();
   },
 
@@ -309,37 +316,37 @@ export const api = {
     if (options?.rsiMax !== undefined) params.set('rsiMax', options.rsiMax.toString());
     if (options?.fresh) params.set('fresh', '1');
     params.set('t', Date.now().toString());
-    const res = await fetch(`/api/market/hidden-scanner?${params.toString()}`);
+    const res = await apiFetch(`/api/market/hidden-scanner?${params.toString()}`);
     return res.json();
   },
 
   async getCoinDetail(symbol: string): Promise<CoinDetailData> {
-    const res = await fetch(`/api/market/coin/${symbol}`);
+    const res = await apiFetch(`/api/market/coin/${symbol}`);
     return res.json();
   },
 
   async getSignals() {
-    const res = await fetch('/api/signals');
+    const res = await apiFetch('/api/signals');
     return res.json();
   },
 
   async getPaperTrading() {
-    const res = await fetch('/api/paper-trading');
+    const res = await apiFetch('/api/paper-trading');
     return res.json();
   },
 
   async closePaperPosition(id: string) {
-    const res = await fetch(`/api/paper-trading/close/${id}`, { method: 'POST' });
+    const res = await apiFetch(`/api/paper-trading/close/${id}`, { method: 'POST' });
     return res.json();
   },
 
   async getRiskSettings() {
-    const res = await fetch('/api/risk/settings');
+    const res = await apiFetch('/api/risk/settings');
     return res.json();
   },
 
   async updateRiskSettings(cfg: any) {
-    const res = await fetch('/api/risk/settings', {
+    const res = await apiFetch('/api/risk/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cfg)
@@ -348,7 +355,7 @@ export const api = {
   },
 
   async toggleKillSwitch(action: 'HALT' | 'RESET') {
-    const res = await fetch('/api/risk/kill-switch', {
+    const res = await apiFetch('/api/risk/kill-switch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action })
@@ -357,7 +364,7 @@ export const api = {
   },
 
   async setTradingMode(mode: 'ANALYSIS' | 'PAPER' | 'LIVE') {
-    const res = await fetch('/api/trading-mode', {
+    const res = await apiFetch('/api/trading-mode', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode })
@@ -366,17 +373,17 @@ export const api = {
   },
 
   async getAgents(): Promise<{ agents: AgentData[] }> {
-    const res = await fetch('/api/agents');
+    const res = await apiFetch('/api/agents');
     return res.json();
   },
 
   async controlAgent(id: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'restart') {
-    const res = await fetch(`/api/agents/${id}/${action}`, { method: 'POST' });
+    const res = await apiFetch(`/api/agents/${id}/${action}`, { method: 'POST' });
     return res.json();
   },
 
   async parseCommand(prompt: string) {
-    const res = await fetch('/api/command-center/parse', {
+    const res = await apiFetch('/api/command-center/parse', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt })
@@ -385,7 +392,7 @@ export const api = {
   },
 
   async executeCommand(command: any) {
-    const res = await fetch('/api/command-center/execute', {
+    const res = await apiFetch('/api/command-center/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command })
@@ -394,7 +401,7 @@ export const api = {
   },
 
   async runBacktest(strategyCode: string, symbol: string) {
-    const res = await fetch('/api/backtests/run', {
+    const res = await apiFetch('/api/backtests/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ strategyCode, symbol })
@@ -403,7 +410,7 @@ export const api = {
   },
 
   async createReplay(symbol: string, timeframe: string) {
-    const res = await fetch('/api/replay/create', {
+    const res = await apiFetch('/api/replay/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol, timeframe })
@@ -412,7 +419,7 @@ export const api = {
   },
 
   async stepReplay(sessionId: string, action: string) {
-    const res = await fetch(`/api/replay/${sessionId}/action`, {
+    const res = await apiFetch(`/api/replay/${sessionId}/action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action })
@@ -421,27 +428,27 @@ export const api = {
   },
 
   async get24hStats() {
-    const res = await fetch('/api/monitoring/24h-stats');
+    const res = await apiFetch('/api/monitoring/24h-stats');
     return res.json();
   },
 
   async getNotifications() {
-    const res = await fetch('/api/notifications');
+    const res = await apiFetch('/api/notifications');
     return res.json();
   },
 
   async markNotificationsRead() {
-    const res = await fetch('/api/notifications/mark-read', { method: 'POST' });
+    const res = await apiFetch('/api/notifications/mark-read', { method: 'POST' });
     return res.json();
   },
 
   async getJournal() {
-    const res = await fetch('/api/journal');
+    const res = await apiFetch('/api/journal');
     return res.json();
   },
 
   async connectBinance(apiKey: string, apiSecret: string) {
-    const res = await fetch('/api/live-trading/connect', {
+    const res = await apiFetch('/api/live-trading/connect', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ apiKey, apiSecret })
@@ -450,7 +457,7 @@ export const api = {
   },
 
   async disconnectBinance() {
-    const res = await fetch('/api/live-trading/disconnect', {
+    const res = await apiFetch('/api/live-trading/disconnect', {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
@@ -458,14 +465,14 @@ export const api = {
   },
 
   async getLiveAccountBalance() {
-    const res = await fetch('/api/live-trading/account', {
+    const res = await apiFetch('/api/live-trading/account', {
       headers: getAuthHeaders()
     });
     return res.json();
   },
 
   async getLiveStatus() {
-    const res = await fetch('/api/live-trading/status', {
+    const res = await apiFetch('/api/live-trading/status', {
       headers: getAuthHeaders()
     });
     return res.json();
@@ -473,7 +480,7 @@ export const api = {
 
   // Auth & User Access Management
   async login(username: string, password: string, licenseKey?: string): Promise<{ success: boolean; token?: string; sessionId?: string; licenseKey?: string; user?: UserProfile; error?: string }> {
-    const res = await fetch('/api/auth/login', {
+    const res = await apiFetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password, licenseKey })
@@ -488,7 +495,7 @@ export const api = {
   },
 
   async register(username: string, email: string, password: string): Promise<{ success: boolean; token?: string; user?: UserProfile; error?: string }> {
-    const res = await fetch('/api/auth/register', {
+    const res = await apiFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, email, password })
@@ -507,7 +514,7 @@ export const api = {
 
   async validateSession(): Promise<{ valid: boolean; code?: string; error?: string; role?: string; expiresAt?: string; licenseKey?: string }> {
     try {
-      const res = await fetch('/api/auth/validate-session', {
+      const res = await apiFetch('/api/auth/validate-session', {
         headers: getAuthHeaders()
       });
       return res.json();
@@ -517,21 +524,21 @@ export const api = {
   },
 
   async getMe(): Promise<UserMeResponse> {
-    const res = await fetch('/api/auth/me', {
+    const res = await apiFetch('/api/auth/me', {
       headers: getAuthHeaders()
     });
     return res.json();
   },
 
   async getUsers(): Promise<{ users: UserProfile[] }> {
-    const res = await fetch('/api/auth/users', {
+    const res = await apiFetch('/api/auth/users', {
       headers: getAuthHeaders()
     });
     return res.json();
   },
 
   async createUser(user: { username: string; email: string; password: string; role: 'ADMIN' | 'USER' }) {
-    const res = await fetch('/api/auth/users', {
+    const res = await apiFetch('/api/auth/users', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(user)
@@ -540,7 +547,7 @@ export const api = {
   },
 
   async toggleUserStatus(id: string, status: 'active' | 'suspended') {
-    const res = await fetch(`/api/auth/users/${id}/status`, {
+    const res = await apiFetch(`/api/auth/users/${id}/status`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ status })
@@ -549,7 +556,7 @@ export const api = {
   },
 
   async deleteUser(id: string) {
-    const res = await fetch(`/api/auth/users/${id}`, {
+    const res = await apiFetch(`/api/auth/users/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
@@ -558,14 +565,14 @@ export const api = {
 
   // Admin License Management
   async getLicenses(): Promise<{ success: boolean; licenses: LicenseInfo[]; error?: string }> {
-    const res = await fetch('/api/admin/licenses', {
+    const res = await apiFetch('/api/admin/licenses', {
       headers: getAuthHeaders()
     });
     return res.json();
   },
 
   async createLicense(data: { durationDays: number; note?: string; customKey?: string }): Promise<{ success: boolean; license?: LicenseInfo; error?: string }> {
-    const res = await fetch('/api/admin/licenses', {
+    const res = await apiFetch('/api/admin/licenses', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(data)
@@ -574,7 +581,7 @@ export const api = {
   },
 
   async resetLicenseSession(id: string): Promise<{ success: boolean; message?: string; error?: string }> {
-    const res = await fetch(`/api/admin/licenses/${id}/reset-session`, {
+    const res = await apiFetch(`/api/admin/licenses/${id}/reset-session`, {
       method: 'POST',
       headers: getAuthHeaders()
     });
@@ -582,7 +589,7 @@ export const api = {
   },
 
   async revokeLicense(id: string): Promise<{ success: boolean; message?: string; error?: string }> {
-    const res = await fetch(`/api/admin/licenses/${id}/revoke`, {
+    const res = await apiFetch(`/api/admin/licenses/${id}/revoke`, {
       method: 'POST',
       headers: getAuthHeaders()
     });
@@ -590,7 +597,7 @@ export const api = {
   },
 
   async deleteLicense(id: string): Promise<{ success: boolean; message?: string; error?: string }> {
-    const res = await fetch(`/api/admin/licenses/${id}`, {
+    const res = await apiFetch(`/api/admin/licenses/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
@@ -604,9 +611,23 @@ class WebSocketManager {
   private listeners: Array<(msg: any) => void> = [];
 
   connect() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.port === '5173' ? 'localhost:4000' : window.location.host;
-    const url = `${protocol}//${host}/ws`;
+    let url: string;
+    const envWs = import.meta.env.VITE_WS_URL;
+    if (envWs) {
+      url = envWs;
+    } else if (API_BASE && API_BASE.startsWith('http')) {
+      try {
+        const parsed = new URL(API_BASE);
+        const wsProto = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+        url = `${wsProto}//${parsed.host}/ws`;
+      } catch (e) {
+        url = `/ws`;
+      }
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.port === '5173' ? 'localhost:4000' : window.location.host;
+      url = `${protocol}//${host}/ws`;
+    }
 
     try {
       this.ws = new WebSocket(url);
