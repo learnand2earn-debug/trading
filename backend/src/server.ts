@@ -133,7 +133,7 @@ async function startAutomatedScannerLoop() {
     executionEngine.updateMarketPrice(symbol, candle.close);
   });
 
-  // Pre-seed initial candle history
+  // Pre-seed initial candle history with paced requests
   for (const sym of symbols) {
     try {
       const k1h = await binanceService.fetchKlines(sym, '1h', 50);
@@ -145,6 +145,9 @@ async function startAutomatedScannerLoop() {
       k1d.forEach(c => candleStore.updateCandle(sym, '1d', c));
       k30m.forEach(c => candleStore.updateCandle(sym, '30m', c));
       k15m.forEach(c => candleStore.updateCandle(sym, '15m', c));
+
+      // Small pacing pause to respect rate limits
+      await new Promise(r => setTimeout(r, 60));
     } catch (e: any) {
       console.warn(`[Scanner] Initial seed error for ${sym}:`, e.message);
     }

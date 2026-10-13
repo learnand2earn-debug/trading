@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { binanceGet } from './binanceClient.js';
 import { Candle } from '../indicators/types.js';
 import { calculateRSI } from '../indicators/rsi.js';
 import { MASTER_COINS } from './masterCoins.js';
@@ -75,7 +76,7 @@ class HiddenScannerService {
     }
 
     try {
-      const resp = await axios.get<any>('https://api.binance.com/api/v3/exchangeInfo?permissions=SPOT', {
+      const resp = await binanceGet<any>('/api/v3/exchangeInfo?permissions=SPOT', {
         timeout: 9000
       });
       const valid = new Set<string>();
@@ -141,19 +142,19 @@ class HiddenScannerService {
 
     try {
       const [k15Res, k30Res, k1hRes, k1dRes] = await Promise.all([
-        axios.get<any[]>('https://api.binance.com/api/v3/klines', {
+        binanceGet<any[]>('/api/v3/klines', {
           params: { symbol, interval: '15m', limit: 100 },
           timeout: 8000
         }),
-        axios.get<any[]>('https://api.binance.com/api/v3/klines', {
+        binanceGet<any[]>('/api/v3/klines', {
           params: { symbol, interval: '30m', limit: 100 },
           timeout: 8000
         }),
-        axios.get<any[]>('https://api.binance.com/api/v3/klines', {
+        binanceGet<any[]>('/api/v3/klines', {
           params: { symbol, interval: '1h', limit: 100 },
           timeout: 8000
         }),
-        axios.get<any[]>('https://api.binance.com/api/v3/klines', {
+        binanceGet<any[]>('/api/v3/klines', {
           params: { symbol, interval: '1d', limit: 100 },
           timeout: 8000
         })
@@ -200,7 +201,7 @@ class HiddenScannerService {
 
     let rawTickers: any[] = [];
     try {
-      const resp = await axios.get<any[]>('https://api.binance.com/api/v3/ticker/24hr', { timeout: 9000 });
+      const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 9000 });
       rawTickers = resp.data;
     } catch (err: any) {
       if (this.cachedScan) return this.cachedScan;

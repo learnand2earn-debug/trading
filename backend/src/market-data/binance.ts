@@ -1,6 +1,6 @@
-import axios from 'axios';
 import WebSocket from 'ws';
 import { Candle } from '../indicators/types.js';
+import { binanceGet } from './binanceClient.js';
 
 export interface BinanceTicker24h {
   symbol: string;
@@ -13,15 +13,13 @@ export interface BinanceTicker24h {
 }
 
 export class BinanceMarketDataService {
-  private restBaseUrl = 'https://api.binance.com';
   private wsBaseUrl = 'wss://stream.binance.com:9443/ws';
   private ws: WebSocket | null = null;
   private isConnected = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private onCandleCallback?: (symbol: string, timeframe: string, candle: Candle) => void;
 
-  constructor(options?: { restUrl?: string; wsUrl?: string }) {
-    if (options?.restUrl) this.restBaseUrl = options.restUrl;
+  constructor(options?: { wsUrl?: string }) {
     if (options?.wsUrl) this.wsBaseUrl = options.wsUrl;
   }
 
@@ -31,7 +29,7 @@ export class BinanceMarketDataService {
 
   async getTopGainers(limit: number = 7): Promise<BinanceTicker24h[]> {
     try {
-      const resp = await axios.get<any[]>(`${this.restBaseUrl}/api/v3/ticker/24hr`, { timeout: 6000 });
+      const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 8000 });
       const usdtPairs = resp.data
         .filter(t => t.symbol.endsWith('USDT'))
         .map(t => ({
@@ -54,9 +52,9 @@ export class BinanceMarketDataService {
 
   async fetchKlines(symbol: string, interval: string, limit: number = 100): Promise<Candle[]> {
     try {
-      const resp = await axios.get<any[]>(`${this.restBaseUrl}/api/v3/klines`, {
+      const resp = await binanceGet<any[]>('/api/v3/klines', {
         params: { symbol, interval, limit },
-        timeout: 6000
+        timeout: 8000
       });
 
       return resp.data.map(k => ({

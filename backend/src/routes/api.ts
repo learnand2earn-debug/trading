@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import axios from 'axios';
+import { binanceGet } from '../market-data/binanceClient.js';
 import { binanceService } from '../market-data/binance.js';
 import { coinGlassService } from '../market-data/coinglass.js';
 import { candleStore } from '../market-data/candleStore.js';
@@ -829,7 +830,7 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
   }
 
   try {
-    const resp = await axios.get<any[]>('https://api.binance.com/api/v3/ticker/24hr', { timeout: 9000 });
+    const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 9000 });
     const usdtMap: Record<string, { price: number; change24h: number }> = {};
     const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];
 
@@ -980,7 +981,7 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
   // Ensure overview is fresh
   if (!cachedOverview || (now - lastOverviewCacheTime > 30000)) {
     try {
-      const resp = await axios.get<any[]>('https://api.binance.com/api/v3/ticker/24hr', { timeout: 9000 });
+      const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 9000 });
       const usdtMap: Record<string, { price: number; change24h: number }> = {};
       const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];
       const realPairs = resp.data.filter((t: any) =>
