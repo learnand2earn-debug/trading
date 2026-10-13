@@ -31,7 +31,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 const clients = new Set<WebSocket>();
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws: WebSocket) => {
   clients.add(ws);
   console.log(`[WebSocket] Client connected. Total clients: ${clients.size}`);
 

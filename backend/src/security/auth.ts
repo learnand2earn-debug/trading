@@ -14,6 +14,8 @@ export interface AuthUser {
 
 export interface AuthenticatedRequest extends Request {
   user?: AuthUser;
+  body: any;
+  headers: any;
 }
 
 /**
@@ -110,8 +112,8 @@ export function verifyToken(token: string): AuthUser | null {
  * Falls back to default admin user if no token is provided to preserve backward compatibility.
  */
 export function optionalAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+  const authHeader = (req.headers && (req.headers.authorization || req.headers.Authorization)) || (typeof req.header === 'function' ? req.header('authorization') : undefined);
+  if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
     const user = verifyToken(token);
     if (user) {
@@ -134,8 +136,8 @@ export function optionalAuth(req: AuthenticatedRequest, res: Response, next: Nex
  * Express middleware requiring a valid authenticated token
  */
 export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const authHeader = (req.headers && (req.headers.authorization || req.headers.Authorization)) || (typeof req.header === 'function' ? req.header('authorization') : undefined);
+  if (!authHeader || typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Authentication required. Please log in.' });
     return;
   }

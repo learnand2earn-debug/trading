@@ -77,7 +77,7 @@ export function evaluateHiddenBullish(
   );
   const structurePassed = patternResult.matched || patternResult.reactionPct >= 0.1 || isConsolidating;
   conditions.push({
-    name: '1H Support / Reaction Structure',
+    name: '10-Candle Drop & Support Reaction Structure',
     category: 'SOURCE_RULE',
     passed: structurePassed,
     actualValue: `Drop: -${patternResult.downwardPct}%, Reaction: +${patternResult.reactionPct}%`,

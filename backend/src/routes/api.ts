@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import { binanceService } from '../market-data/binance.js';
 import { coinGlassService } from '../market-data/coinglass.js';
@@ -48,7 +48,7 @@ export const apiRouter = Router();
 // ============================================================
 
 // Login endpoint with License Key and Single-Device Locking
-apiRouter.post('/auth/login', async (req, res) => {
+apiRouter.post('/auth/login', async (req: Request, res: Response) => {
   const { username, password, licenseKey } = req.body;
   if (!username || !password) {
     res.status(400).json({ error: 'Username and password are required' });
@@ -105,8 +105,46 @@ apiRouter.post('/auth/login', async (req, res) => {
     return;
   }
 
-  // Non-admin users MUST have a valid license key
+  // Non-admin users: if no license key provided, check if existing registered user in database
   if (!cleanKey) {
+    const userRes = await db.query(
+      'SELECT * FROM users WHERE username = $1 OR email = $1 LIMIT 1',
+      [cleanUsername]
+    );
+    if (userRes.rows.length > 0) {
+      const user = userRes.rows[0];
+      if (user.status === 'suspended') {
+        res.status(403).json({ error: 'Your account has been suspended.' });
+        return;
+      }
+      const isValid = verifyPassword(cleanPassword, user.password_hash);
+      if (isValid) {
+        const sessionId = `sess_${uuidv4()}`;
+        await db.query('UPDATE users SET active_session_id = $1 WHERE id = $2', [sessionId, user.id]);
+        const authUser: AuthUser = {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role === 'ADMIN' ? 'ADMIN' : 'USER',
+          sessionId
+        };
+        const token = generateToken(authUser);
+        res.json({
+          success: true,
+          token,
+          sessionId,
+          user: {
+            ...authUser,
+            status: user.status
+          }
+        });
+        return;
+      } else {
+        res.status(401).json({ error: 'Invalid username or password' });
+        return;
+      }
+    }
+
     res.status(400).json({
       error: 'License Key is required to access ScalpPro. Contact WhatsApp: +923164404787 for access.'
     });
@@ -239,7 +277,7 @@ apiRouter.post('/auth/login', async (req, res) => {
 });
 
 // Validate Session Heartbeat (Single Device Protection)
-apiRouter.get('/auth/validate-session', optionalAuth, async (req: AuthenticatedRequest, res) => {
+apiRouter.get('/auth/validate-session', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) {
     res.status(401).json({ valid: false, code: 'UNAUTHORIZED', error: 'Authentication required' });
     return;
@@ -326,7 +364,7 @@ apiRouter.get('/auth/validate-session', optionalAuth, async (req: AuthenticatedR
 
 
 // Register endpoint
-apiRouter.post('/auth/register', async (req, res) => {
+apiRouter.post('/auth/register', async (req: Request, res: Response) => {
   const { username, email, password } = req.body;
   if (!username || !email || !password) {
     res.status(400).json({ error: 'Username, email and password are required' });
@@ -364,7 +402,7 @@ apiRouter.post('/auth/register', async (req, res) => {
 });
 
 // Current User Profile & Binance Connection Info
-apiRouter.get('/auth/me', optionalAuth, async (req: AuthenticatedRequest, res) => {
+apiRouter.get('/auth/me', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'usr-admin-1';
   const db = await getDb();
 
@@ -408,7 +446,7 @@ apiRouter.get('/auth/me', optionalAuth, async (req: AuthenticatedRequest, res) =
 });
 
 // Admin: List all registered users with their Binance status
-apiRouter.get('/auth/users', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+apiRouter.get('/auth/users', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const db = await getDb();
   const query = `
     SELECT 
@@ -429,7 +467,7 @@ apiRouter.get('/auth/users', optionalAuth, requireAdmin, async (req: Authenticat
 });
 
 // Admin: Create new user
-apiRouter.post('/auth/users', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+apiRouter.post('/auth/users', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { username, email, password, role } = req.body;
   if (!username || !email || !password) {
     res.status(400).json({ error: 'Username, email and password are required' });
@@ -464,7 +502,7 @@ apiRouter.post('/auth/users', optionalAuth, requireAdmin, async (req: Authentica
 });
 
 // Admin: Toggle user status (active / suspended)
-apiRouter.patch('/auth/users/:id/status', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+apiRouter.patch('/auth/users/:id/status', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -484,7 +522,7 @@ apiRouter.patch('/auth/users/:id/status', optionalAuth, requireAdmin, async (req
 });
 
 // Admin: Delete user
-apiRouter.delete('/auth/users/:id', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+apiRouter.delete('/auth/users/:id', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   if (id === 'usr-admin-1' || id === req.user?.id) {
     res.status(400).json({ error: 'Cannot delete primary admin account' });
@@ -501,7 +539,7 @@ apiRouter.delete('/auth/users/:id', optionalAuth, requireAdmin, async (req: Auth
 // ============================================================
 
 // List all licenses with live online presence
-apiRouter.get('/admin/licenses', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+apiRouter.get('/admin/licenses', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const db = await getDb();
   const licRes = await db.query(`
     SELECT 
@@ -537,7 +575,7 @@ apiRouter.get('/admin/licenses', optionalAuth, requireAdmin, async (req: Authent
 });
 
 // Generate new license key
-apiRouter.post('/admin/licenses', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+apiRouter.post('/admin/licenses', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { durationDays, note, customKey } = req.body;
   const db = await getDb();
 
@@ -574,7 +612,7 @@ apiRouter.post('/admin/licenses', optionalAuth, requireAdmin, async (req: Authen
 });
 
 // Reset active session (Kick current device immediately)
-apiRouter.post('/admin/licenses/:id/reset-session', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+apiRouter.post('/admin/licenses/:id/reset-session', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const db = await getDb();
   await db.query('UPDATE licenses SET active_session_id = NULL WHERE id = $1', [id]);
@@ -582,7 +620,7 @@ apiRouter.post('/admin/licenses/:id/reset-session', optionalAuth, requireAdmin, 
 });
 
 // Revoke license
-apiRouter.post('/admin/licenses/:id/revoke', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+apiRouter.post('/admin/licenses/:id/revoke', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const db = await getDb();
   await db.query("UPDATE licenses SET status = 'revoked', active_session_id = NULL WHERE id = $1", [id]);
@@ -590,7 +628,7 @@ apiRouter.post('/admin/licenses/:id/revoke', optionalAuth, requireAdmin, async (
 });
 
 // Delete license
-apiRouter.delete('/admin/licenses/:id', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
+apiRouter.delete('/admin/licenses/:id', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const db = await getDb();
   await db.query('DELETE FROM licenses WHERE id = $1', [id]);
@@ -599,7 +637,7 @@ apiRouter.delete('/admin/licenses/:id', optionalAuth, requireAdmin, async (req: 
 
 
 // 1. Health
-apiRouter.get('/health', async (req, res) => {
+apiRouter.get('/health', async (req: Request, res: Response) => {
   const db = await getDb();
   let dbStatus = 'HEALTHY';
   try {
@@ -621,14 +659,14 @@ apiRouter.get('/health', async (req, res) => {
 });
 
 // Strategies endpoint
-apiRouter.get('/strategies', async (req, res) => {
+apiRouter.get('/strategies', async (req: Request, res: Response) => {
   const db = await getDb();
   const result = await db.query('SELECT * FROM strategies ORDER BY id ASC');
   res.json(result.rows);
 });
 
 // Risk Status & Controls
-apiRouter.get('/risk/status', (req, res) => {
+apiRouter.get('/risk/status', (req: Request, res: Response) => {
   res.json({
     emergencyHaltActive: riskEngine.isEmergencyKillActive(),
     config: riskEngine.getConfig(),
@@ -636,33 +674,33 @@ apiRouter.get('/risk/status', (req, res) => {
   });
 });
 
-apiRouter.post('/risk/emergency-stop', (req, res) => {
+apiRouter.post('/risk/emergency-stop', (req: Request, res: Response) => {
   riskEngine.triggerEmergencyKillAllTrading(req.body.actor || 'API');
   res.json({ success: true, emergencyHaltActive: true });
 });
 
-apiRouter.post('/risk/reset-emergency', (req, res) => {
+apiRouter.post('/risk/reset-emergency', (req: Request, res: Response) => {
   riskEngine.resetEmergencyHalt();
   res.json({ success: true, emergencyHaltActive: false });
 });
 
 // Command Agent prompt endpoint
-apiRouter.post('/command', async (req, res) => {
+apiRouter.post('/command', async (req: Request, res: Response) => {
   const parsed = commandAgent.parseUserPrompt(req.body.prompt || '');
   res.json({ command: parsed });
 });
 
 // Positions & Trades direct endpoints
-apiRouter.get('/positions', (req, res) => {
+apiRouter.get('/positions', (req: Request, res: Response) => {
   res.json(executionEngine.getOpenPositions());
 });
 
-apiRouter.get('/trades', (req, res) => {
+apiRouter.get('/trades', (req: Request, res: Response) => {
   res.json(executionEngine.getClosedTrades());
 });
 
 // Admin Rules endpoint
-apiRouter.get('/admin/rules', async (req, res) => {
+apiRouter.get('/admin/rules', async (req: Request, res: Response) => {
   const db = await getDb();
   const result = await db.query('SELECT * FROM strategy_rules ORDER BY created_at ASC');
   if (result.rows.length > 0) {
@@ -779,7 +817,7 @@ let cachedOverview: CachedLiveOverview | null = null;
 let lastOverviewCacheTime = 0;
 const cachedOverviewMap: Record<string, { data: CachedLiveOverview; time: number }> = {};
 
-apiRouter.get('/market/live-overview', async (req, res) => {
+apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
   const now = Date.now();
   const tf = ((req.query.timeframe as string) || '1H').toUpperCase();
   const forceFresh = req.query.fresh === '1' || req.query.fresh === 'true';
@@ -931,7 +969,7 @@ apiRouter.get('/market/live-overview', async (req, res) => {
 let cachedScannerRows: any[] | null = null;
 let lastScannerCacheTime = 0;
 
-apiRouter.get('/market/scanner', async (req, res) => {
+apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
   const now = Date.now();
   const forceFresh = req.query.fresh === '1' || req.query.fresh === 'true';
   if (!forceFresh && cachedScannerRows && (now - lastScannerCacheTime < 25000)) {
@@ -1121,7 +1159,7 @@ apiRouter.get('/market/scanner', async (req, res) => {
 });
 
 // 2b. V1 Scalping Live Scanner: 100% Accurate to Binance Spot Market
-apiRouter.get('/market/v1-scanner', async (req, res) => {
+apiRouter.get('/market/v1-scanner', async (req: Request, res: Response) => {
   try {
     const rsiMin = req.query.rsiMin ? parseFloat(req.query.rsiMin as string) : 50;
     const rsiMax = req.query.rsiMax ? parseFloat(req.query.rsiMax as string) : 60;
@@ -1140,7 +1178,7 @@ apiRouter.get('/market/v1-scanner', async (req, res) => {
 });
 
 // 2c. Hidden Bullish Live Scanner: 100% Accurate to Binance Spot Market (RSI 30-40, Consolidation & 30M Lead)
-apiRouter.get('/market/hidden-scanner', async (req, res) => {
+apiRouter.get('/market/hidden-scanner', async (req: Request, res: Response) => {
   try {
     const rsiMin = req.query.rsiMin ? parseFloat(req.query.rsiMin as string) : 30;
     const rsiMax = req.query.rsiMax ? parseFloat(req.query.rsiMax as string) : 40;
@@ -1159,7 +1197,7 @@ apiRouter.get('/market/hidden-scanner', async (req, res) => {
 });
 
 // 3. Coin Detail: Multi-timeframe charts and 7 strategy breakdowns
-apiRouter.get('/market/coin/:symbol', async (req, res) => {
+apiRouter.get('/market/coin/:symbol', async (req: Request, res: Response) => {
   const sym = req.params.symbol.toUpperCase();
   const data = candleStore.getOrCreate(sym);
 
@@ -1205,7 +1243,7 @@ apiRouter.get('/market/coin/:symbol', async (req, res) => {
 });
 
 // 4. Signals
-apiRouter.get('/signals', async (req, res) => {
+apiRouter.get('/signals', async (req: Request, res: Response) => {
   const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'AVAXUSDT'];
   const allSignals = [];
 
@@ -1218,7 +1256,7 @@ apiRouter.get('/signals', async (req, res) => {
 });
 
 // 5. Paper Trading & Positions
-apiRouter.get('/paper-trading', (req, res) => {
+apiRouter.get('/paper-trading', (req: Request, res: Response) => {
   const balance = executionEngine.getPaperBalance();
   const open = executionEngine.getOpenPositions();
   const closed = executionEngine.getClosedTrades();
@@ -1241,7 +1279,7 @@ apiRouter.get('/paper-trading', (req, res) => {
   });
 });
 
-apiRouter.post('/paper-trading/close/:id', (req, res) => {
+apiRouter.post('/paper-trading/close/:id', (req: Request, res: Response) => {
   const pos = executionEngine.getOpenPositions().find(p => p.id === req.params.id);
   if (!pos) {
     res.status(404).json({ error: 'Position not found' });
@@ -1252,7 +1290,7 @@ apiRouter.post('/paper-trading/close/:id', (req, res) => {
 });
 
 // 6. Risk Engine & Kill Switch
-apiRouter.get('/risk/settings', (req, res) => {
+apiRouter.get('/risk/settings', (req: Request, res: Response) => {
   res.json({
     config: riskEngine.getConfig(),
     isEmergencyHalted: riskEngine.isEmergencyKillActive(),
@@ -1260,12 +1298,12 @@ apiRouter.get('/risk/settings', (req, res) => {
   });
 });
 
-apiRouter.post('/risk/settings', (req, res) => {
+apiRouter.post('/risk/settings', (req: Request, res: Response) => {
   riskEngine.updateConfig(req.body);
   res.json({ success: true, config: riskEngine.getConfig() });
 });
 
-apiRouter.post('/risk/kill-switch', (req, res) => {
+apiRouter.post('/risk/kill-switch', (req: Request, res: Response) => {
   const { action } = req.body; // 'HALT' or 'RESET'
   if (action === 'HALT') {
     riskEngine.triggerEmergencyKillAllTrading('AdminPanel');
@@ -1276,7 +1314,7 @@ apiRouter.post('/risk/kill-switch', (req, res) => {
   }
 });
 
-apiRouter.post('/trading-mode', (req, res) => {
+apiRouter.post('/trading-mode', (req: Request, res: Response) => {
   const { mode } = req.body;
   if (!['ANALYSIS', 'PAPER', 'LIVE'].includes(mode)) {
     res.status(400).json({ error: 'Invalid mode' });
@@ -1287,11 +1325,11 @@ apiRouter.post('/trading-mode', (req, res) => {
 });
 
 // 7. Agents Control Center (34 Agents)
-apiRouter.get('/agents', (req, res) => {
+apiRouter.get('/agents', (req: Request, res: Response) => {
   res.json({ agents: agentManager.getAllAgents() });
 });
 
-apiRouter.post('/agents/:id/:action', (req, res) => {
+apiRouter.post('/agents/:id/:action', (req: Request, res: Response) => {
   const { id, action } = req.params;
   let ok = false;
   if (action === 'start') ok = agentManager.startAgent(id);
@@ -1305,7 +1343,7 @@ apiRouter.post('/agents/:id/:action', (req, res) => {
 });
 
 // 8. Command Center
-apiRouter.post('/command-center/parse', (req, res) => {
+apiRouter.post('/command-center/parse', (req: Request, res: Response) => {
   const { prompt } = req.body;
   if (!prompt) {
     res.status(400).json({ error: 'Prompt is required' });
@@ -1315,14 +1353,14 @@ apiRouter.post('/command-center/parse', (req, res) => {
   res.json({ command: parsed });
 });
 
-apiRouter.post('/command-center/execute', async (req, res) => {
+apiRouter.post('/command-center/execute', async (req: Request, res: Response) => {
   const { command } = req.body;
   const result = await commandAgent.executeCommand(command);
   res.json(result);
 });
 
 // 9. Backtesting
-apiRouter.post('/backtests/run', async (req, res) => {
+apiRouter.post('/backtests/run', async (req: Request, res: Response) => {
   const { strategyCode, symbol } = req.body;
   const data = candleStore.getOrCreate(symbol || 'BTCUSDT');
 
@@ -1350,7 +1388,7 @@ apiRouter.post('/backtests/run', async (req, res) => {
 });
 
 // 10. Replay
-apiRouter.post('/replay/create', async (req, res) => {
+apiRouter.post('/replay/create', async (req: Request, res: Response) => {
   const { symbol, timeframe } = req.body;
   const sym = symbol || 'BTCUSDT';
   const tf = timeframe || '1h';
@@ -1363,7 +1401,7 @@ apiRouter.post('/replay/create', async (req, res) => {
   res.json({ session: session.getState() });
 });
 
-apiRouter.post('/replay/:id/action', (req, res) => {
+apiRouter.post('/replay/:id/action', (req: Request, res: Response) => {
   const { id } = req.params;
   const { action } = req.body; // 'NEXT', 'PLAY', 'PAUSE', 'RESET', 'FAST_FORWARD'
   const session = activeReplaySessions.get(id);
@@ -1385,38 +1423,38 @@ apiRouter.post('/replay/:id/action', (req, res) => {
 });
 
 // 11. 24H Watch & Telemetry
-apiRouter.get('/monitoring/24h-stats', (req, res) => {
+apiRouter.get('/monitoring/24h-stats', (req: Request, res: Response) => {
   res.json({ stats: watchAndMonitoringService.get24hStats() });
 });
 
-apiRouter.get('/notifications', (req, res) => {
+apiRouter.get('/notifications', (req: Request, res: Response) => {
   res.json({ notifications: watchAndMonitoringService.getNotifications() });
 });
 
-apiRouter.post('/notifications/mark-read', (req, res) => {
+apiRouter.post('/notifications/mark-read', (req: Request, res: Response) => {
   watchAndMonitoringService.markAllNotificationsRead();
   res.json({ success: true });
 });
 
-apiRouter.post('/watch/start', (req, res) => {
+apiRouter.post('/watch/start', (req: Request, res: Response) => {
   const { strategyCode, symbols, durationHours } = req.body;
   const session = watchAndMonitoringService.startWatchSession(strategyCode, symbols, durationHours);
   res.json({ session });
 });
 
-apiRouter.get('/watch/all', (req, res) => {
+apiRouter.get('/watch/all', (req: Request, res: Response) => {
   res.json({ sessions: watchAndMonitoringService.getAllWatches() });
 });
 
 // 12. Trade Journal
-apiRouter.get('/journal', async (req, res) => {
+apiRouter.get('/journal', async (req: Request, res: Response) => {
   const db = await getDb();
   const records = await db.query('SELECT * FROM trade_journal ORDER BY created_at DESC LIMIT 50');
   res.json({ journal: records.rows });
 });
 
 // 13. Binance Secure Credentials & Live Trading Controls (Per-User)
-apiRouter.post('/live-trading/connect', optionalAuth, async (req: AuthenticatedRequest, res) => {
+apiRouter.post('/live-trading/connect', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'usr-admin-1';
   const { apiKey, apiSecret } = req.body;
   if (!apiKey || !apiSecret) {
@@ -1468,7 +1506,7 @@ apiRouter.post('/live-trading/connect', optionalAuth, async (req: AuthenticatedR
   });
 });
 
-apiRouter.get('/live-trading/account', optionalAuth, async (req: AuthenticatedRequest, res) => {
+apiRouter.get('/live-trading/account', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'usr-admin-1';
   const creds = await loadStoredCredentials(userId);
   if (!creds) {
@@ -1488,7 +1526,7 @@ apiRouter.get('/live-trading/account', optionalAuth, async (req: AuthenticatedRe
   });
 });
 
-apiRouter.delete('/live-trading/disconnect', optionalAuth, async (req: AuthenticatedRequest, res) => {
+apiRouter.delete('/live-trading/disconnect', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'usr-admin-1';
   try {
     const db = await getDb();
@@ -1504,7 +1542,7 @@ apiRouter.delete('/live-trading/disconnect', optionalAuth, async (req: Authentic
   }
 });
 
-apiRouter.get('/live-trading/status', optionalAuth, async (req: AuthenticatedRequest, res) => {
+apiRouter.get('/live-trading/status', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id || 'usr-admin-1';
   const creds = await loadStoredCredentials(userId);
   const isConnected = creds !== null;
