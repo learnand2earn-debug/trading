@@ -49,6 +49,10 @@ export interface V1CandidateSignal {
   tradingViewUrl?: string;
   confirmationStatus?: 'CONFIRMED' | 'PENDING';
   qualificationReason?: string;
+  v1Color?: string;
+  divergenceStatus?: string;
+  measuredCandles?: number;
+  barsApart?: number;
 }
 
 export interface V1ActiveCoin {
@@ -97,6 +101,13 @@ export interface HiddenCandidateSignal {
   divergenceDetected?: boolean;
   pivot1?: any;
   pivot2?: any;
+  measuredCandles?: number;
+  priceLow1?: number;
+  priceLow2?: number;
+  rsiLow1?: number;
+  rsiLow2?: number;
+  barsApart?: number;
+  divergenceStatus?: string;
 }
 
 export interface HiddenActiveCoin {

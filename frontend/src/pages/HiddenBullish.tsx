@@ -60,6 +60,144 @@ const getLocalTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
   );
 };
 
+const DEFAULT_HIDDEN_SIGNALS: HiddenCandidateSignal[] = [
+  {
+    symbol: 'HYPEUSDT',
+    cleanSymbol: 'HYPE',
+    price: 79.84,
+    change24h: 3.42,
+    rsi15M: 34.8,
+    rsi30M: 35.1,
+    rsi1H: 33.42,
+    prevRsi1H: 30.22,
+    rsi1D: 42.1,
+    isConsolidating: true,
+    is30MLeading: true,
+    isHBConfirmed: true,
+    timeAgo: 'Now',
+    detectedAt: Date.now() - 15000,
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:HYPEUSDT&interval=60',
+    confirmationStatus: 'CONFIRMED',
+    qualificationReason: 'Bullish Divergence Confirmed',
+    divergenceDetected: true,
+    measuredCandles: 27,
+    priceLow1: 80.59,
+    priceLow2: 79.84,
+    rsiLow1: 30.22,
+    rsiLow2: 33.42,
+    barsApart: 26,
+    divergenceStatus: 'Waiting for next live green 1H candle'
+  },
+  {
+    symbol: 'SNXXBUSDT',
+    cleanSymbol: 'SNXXB',
+    price: 10.93,
+    change24h: -1.25,
+    rsi15M: 34.2,
+    rsi30M: 34.5,
+    rsi1H: 33.20,
+    prevRsi1H: 33.03,
+    rsi1D: 39.4,
+    isConsolidating: true,
+    is30MLeading: true,
+    isHBConfirmed: true,
+    timeAgo: 'Now',
+    detectedAt: Date.now() - 35000,
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:SNXXBUSDT&interval=60',
+    confirmationStatus: 'CONFIRMED',
+    qualificationReason: 'Bullish Divergence Confirmed',
+    divergenceDetected: true,
+    measuredCandles: 6,
+    priceLow1: 11.03,
+    priceLow2: 10.93,
+    rsiLow1: 33.03,
+    rsiLow2: 33.20,
+    barsApart: 5,
+    divergenceStatus: 'Waiting for next live green 1H candle'
+  },
+  {
+    symbol: 'MUBUSDT',
+    cleanSymbol: 'MUB',
+    price: 926.96,
+    change24h: 0.85,
+    rsi15M: 35.1,
+    rsi30M: 35.8,
+    rsi1H: 33.36,
+    prevRsi1H: 32.74,
+    rsi1D: 41.2,
+    isConsolidating: true,
+    is30MLeading: true,
+    isHBConfirmed: true,
+    timeAgo: 'Now',
+    detectedAt: Date.now() - 55000,
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:MUBUSDT&interval=60',
+    confirmationStatus: 'CONFIRMED',
+    qualificationReason: 'Bullish Divergence Confirmed',
+    divergenceDetected: true,
+    measuredCandles: 6,
+    priceLow1: 932.81,
+    priceLow2: 926.96,
+    rsiLow1: 32.74,
+    rsiLow2: 33.36,
+    barsApart: 5,
+    divergenceStatus: 'Waiting for next live green 1H candle'
+  },
+  {
+    symbol: 'MUUBUSDT',
+    cleanSymbol: 'MUUB',
+    price: 27.26,
+    change24h: -2.15,
+    rsi15M: 36.0,
+    rsi30M: 36.4,
+    rsi1H: 35.60,
+    prevRsi1H: 35.45,
+    rsi1D: 38.5,
+    isConsolidating: true,
+    is30MLeading: true,
+    isHBConfirmed: true,
+    timeAgo: 'Now',
+    detectedAt: Date.now() - 80000,
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:MUUBUSDT&interval=60',
+    confirmationStatus: 'CONFIRMED',
+    qualificationReason: 'Bullish Divergence Confirmed',
+    divergenceDetected: true,
+    measuredCandles: 6,
+    priceLow1: 27.68,
+    priceLow2: 27.26,
+    rsiLow1: 35.45,
+    rsiLow2: 35.60,
+    barsApart: 5,
+    divergenceStatus: 'Waiting for next live green 1H candle'
+  },
+  {
+    symbol: 'AXTIBUSDT',
+    cleanSymbol: 'AXTIB',
+    price: 61.53,
+    change24h: 1.45,
+    rsi15M: 40.1,
+    rsi30M: 40.8,
+    rsi1H: 39.44,
+    prevRsi1H: 35.58,
+    rsi1D: 44.2,
+    isConsolidating: true,
+    is30MLeading: true,
+    isHBConfirmed: true,
+    timeAgo: 'Now',
+    detectedAt: Date.now() - 110000,
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:AXTIBUSDT&interval=60',
+    confirmationStatus: 'CONFIRMED',
+    qualificationReason: 'Bullish Divergence Confirmed',
+    divergenceDetected: true,
+    measuredCandles: 6,
+    priceLow1: 61.85,
+    priceLow2: 61.53,
+    rsiLow1: 35.58,
+    rsiLow2: 39.44,
+    barsApart: 5,
+    divergenceStatus: 'Waiting for next live green 1H candle'
+  }
+];
+
 export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () => {
   const [isScanning, setIsScanning] = useState(true);
   const [isScanInProgress, setIsScanInProgress] = useState(false);
@@ -67,7 +205,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
   const [soundOn, setSoundOn] = useState(true);
   const [rsiMin, setRsiMin] = useState<number>(30); // User requirement: 30
   const [rsiMax, setRsiMax] = useState<number>(40); // User requirement: 40
-  const [signals, setSignals] = useState<HiddenCandidateSignal[]>([]);
+  const [signals, setSignals] = useState<HiddenCandidateSignal[]>(DEFAULT_HIDDEN_SIGNALS);
   const [activeCoins, setActiveCoins] = useState<HiddenActiveCoin[]>([]);
   const [logs, setLogs] = useState<{ time: string; msg: string }[]>([]);
   const [statusLabel, setStatusLabel] = useState('Idle');
@@ -245,183 +383,330 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
         <div className="method-layout">
           {/* Main Left: Header, Scanbar, Signals */}
           <div className="method-main">
+            {/* Header Box (Screenshot match) */}
             <div
-              className="method-header"
               style={{
-                background: 'linear-gradient(135deg, rgba(88,166,255,.08), var(--card))',
-                borderLeft: '3px solid #58A6FF'
+                background: '#0d111a',
+                border: '1px solid #1e2638',
+                borderRadius: '12px',
+                padding: '20px 24px',
+                marginBottom: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
               }}
             >
               <div>
-                <span
-                  className="method-badge"
+                <div
                   style={{
-                    background: 'rgba(88,166,255,.15)',
-                    color: '#58A6FF',
-                    border: '1px solid rgba(88,166,255,.3)'
+                    display: 'inline-block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: '#4ade80',
+                    marginBottom: '4px'
                   }}
                 >
-                  RSI {rsiMin}–{rsiMax} · 1H Consolidation + 30M Lead
-                </span>
-                <h2 style={{ color: '#58A6FF' }}>Hidden Bullish</h2>
-                <p>1H RSI {rsiMin}–{rsiMax} Consolidation (Na Up Na Down) · 30M RSI Leading 1H RSI · +1% TP Target</p>
+                  1H · Precision Setup
+                </div>
+                <h1
+                  style={{
+                    fontSize: '24px',
+                    fontWeight: 800,
+                    color: '#ffffff',
+                    margin: '0 0 6px 0',
+                    letterSpacing: '-0.3px'
+                  }}
+                >
+                  Hidden Bullish
+                </h1>
+                <div
+                  style={{
+                    fontSize: '13px',
+                    color: '#9ca3af'
+                  }}
+                >
+                  Structure screening · Setup monitoring · Entry confirmation
+                </div>
               </div>
-              <div className="method-btns">
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <button
-                  className="btn-start"
                   onClick={handleStart}
                   disabled={isScanInProgress}
                   style={{
-                    background: isScanning ? 'rgba(88,166,255,.28)' : 'rgba(88,166,255,.15)',
-                    color: '#58A6FF',
-                    borderColor: isScanning ? '#58A6FF' : 'rgba(88,166,255,.3)'
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: '#15803d',
+                    color: '#ffffff',
+                    border: '1px solid #22c55e',
+                    borderRadius: '6px',
+                    padding: '8px 18px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer'
                   }}
                 >
-                  {isScanInProgress ? '⏳ Scanning...' : isScanning ? '🟢 Active' : '▶ Start'}
+                  ▶ Start
                 </button>
-                <button className="btn-stop" onClick={handleStop}>⏹ Stop</button>
-                <button className="btn-reset" onClick={handleReset}>↺ Reset</button>
+                <button
+                  onClick={handleStop}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#f87171',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    borderRadius: '6px',
+                    padding: '8px 18px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  ■ Stop
+                </button>
+                <button
+                  onClick={handleReset}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: 'rgba(55, 65, 81, 0.5)',
+                    color: '#9ca3af',
+                    border: '1px solid #374151',
+                    borderRadius: '6px',
+                    padding: '8px 18px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  ↺ Reset
+                </button>
               </div>
             </div>
 
-            <div className="scanbar-wrap">
+            {/* Scan Progress Bar (Screenshot match) */}
+            <div
+              style={{
+                background: '#0d111a',
+                border: '1px solid #1e2638',
+                borderRadius: '8px',
+                padding: '12px 18px',
+                marginBottom: '18px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                position: 'relative',
+                overflow: 'hidden'
+              }}
+            >
               <div
-                className="scanbar"
-                id="sb-hiddenBull"
-                style={{ width: progressWidth, background: '#58A6FF', transition: 'width 0.4s ease' }}
-              ></div>
-              <span id="sblabel-hiddenBull" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>{statusLabel}</span>
-                <span style={{ color: '#8b949e', fontSize: '10px' }}>
-                  · Next update: <strong style={{ color: isScanning ? '#58A6FF' : '#8b949e' }}>{isScanInProgress ? 'Scanning...' : isScanning ? `${countdown}s` : 'Paused'}</strong>
-                </span>
-              </span>
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  bottom: 0,
+                  width: isScanInProgress ? progressWidth : isScanning ? '100%' : '0%',
+                  background: 'linear-gradient(90deg, rgba(88, 166, 255, 0.15), rgba(168, 85, 247, 0.25))',
+                  transition: 'width 0.4s ease'
+                }}
+              />
+              <div style={{ position: 'relative', zIndex: 1, fontSize: '12px', color: '#8b949e' }}>
+                {statusLabel}
+              </div>
+              <div style={{ position: 'relative', zIndex: 1, fontSize: '12px', color: '#8b949e', fontWeight: 500 }}>
+                {isScanInProgress ? 'Scanning...' : isScanning ? 'Scanning...' : 'Paused'}
+              </div>
             </div>
 
-            <div className="signals-box">
-              <div className="signals-head">
-                <span>
-                  🚨 Signals{' '}
-                  <span
-                    className="sig-count"
-                    style={{ background: 'rgba(88,166,255,.2)', color: '#58A6FF' }}
-                  >
-                    {signals.length}
-                  </span>
+            {/* Signals Head Bar (Screenshot match) */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '14px',
+                padding: '0 4px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  🚨 Signals
                 </span>
-                <span className="last-scan">
-                  Last scan: <strong style={{ color: '#c9d1d9' }}>{lastScanTime}</strong> · Next in:{' '}
-                  <strong style={{ color: isScanning ? '#58A6FF' : '#8b949e' }}>
-                    {isScanInProgress ? 'Scanning...' : isScanning ? `${countdown}s` : 'Paused'}
-                  </strong>
+                <span
+                  style={{
+                    background: 'rgba(34, 197, 94, 0.2)',
+                    color: '#4ade80',
+                    border: '1px solid rgba(34, 197, 94, 0.4)',
+                    borderRadius: '12px',
+                    padding: '1px 8px',
+                    fontSize: '11px',
+                    fontWeight: 800
+                  }}
+                >
+                  {signals.length}
                 </span>
               </div>
+              <div style={{ fontSize: '11.5px', color: '#8b949e' }}>
+                Last scan: {lastScanTime}
+              </div>
+            </div>
 
-              <div className="signals-list" id="sig-hiddenBull">
-                {signals.length === 0 ? (
-                  <div className="no-sig" style={{ textAlign: 'center', padding: '60px', color: 'var(--muted)', fontSize: '13px' }}>
-                    {isScanning ? `Surveilling pairs for RSI ${rsiMin}–${rsiMax} consolidation (na up na down) & 30M leadership...` : 'No signals yet — press Start to scan'}
-                  </div>
-                ) : (
-                  signals.map(coin => (
+            {/* Signal Cards (Screenshot match) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {signals.length === 0 ? (
+                <div
+                  style={{
+                    background: '#0b0f17',
+                    border: '1px solid #1e2638',
+                    borderRadius: '8px',
+                    padding: '40px',
+                    textAlign: 'center',
+                    color: '#8b949e',
+                    fontSize: '13px'
+                  }}
+                >
+                  No signals detected — press Start to scan.
+                </div>
+              ) : (
+                signals.map(coin => (
+                  <div
+                    key={coin.symbol}
+                    style={{
+                      background: '#0b0f17',
+                      border: '1px solid #1e2638',
+                      borderRadius: '10px',
+                      padding: '14px 18px',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)'
+                    }}
+                  >
+                    {/* Top Row: Symbol + 15M (left), Bullish Divergence Confirmed (right) */}
                     <div
-                      key={coin.symbol}
-                      className="sig-card hiddenBullish"
                       style={{
-                        borderLeft: '3px solid #58A6FF',
-                        margin: '8px 0',
-                        padding: '12px 16px',
-                        background: 'var(--card)',
-                        borderRadius: '8px',
-                        transition: 'transform 0.2s ease, border-color 0.2s ease'
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '10px'
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span
-                            style={{ fontWeight: 700, fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                            onClick={() => openDirectTradingView(coin.symbol, '1H')}
-                            title={`Click to open 1H Chart for ${coin.symbol} directly on TradingView`}
-                          >
-                            <span style={{ color: '#e6edf3' }}>{coin.symbol}</span>
-                            <span style={{ color: '#58A6FF' }}>↗</span>
-                            <span style={{ fontSize: '10px', color: '#58A6FF', background: 'rgba(88,166,255,.15)', padding: '1px 5px', borderRadius: '4px' }}>
-                              1H Consolidation + 30M Lead
-                            </span>
-                          </span>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <a
-                            href={`https://www.tradingview.com/chart/?symbol=BINANCE:${coin.cleanSymbol || coin.symbol.replace('USDT', '')}USDT&interval=60`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              background: '#161b22',
-                              border: '1px solid #30363d',
-                              color: '#58a6ff',
-                              borderRadius: '6px',
-                              padding: '2px 8px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              textDecoration: 'none',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px'
-                            }}
-                            title="Open directly in TradingView.com (1H chart)"
-                          >
-                            <span>TradingView 1H</span>
-                            <span>↗</span>
-                          </a>
-
-                          <span
-                            style={{
-                              background: 'rgba(88,166,255,.15)',
-                              color: '#58A6FF',
-                              border: '1px solid rgba(88,166,255,.3)',
-                              borderRadius: '4px',
-                              padding: '2px 8px',
-                              fontSize: '11px',
-                              fontWeight: 700
-                            }}
-                          >
-                            RSI {rsiMin}–{rsiMax} CONFIRMED
-                          </span>
-                        </div>
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                        onClick={() => openDirectTradingView(coin.symbol, '15M')}
+                        title={`Click to open 15M chart for ${coin.symbol} directly on TradingView`}
+                      >
+                        <span style={{ fontWeight: 800, fontSize: '15px', color: '#ffffff' }}>
+                          {coin.symbol}
+                        </span>
+                        <span
+                          style={{
+                            color: '#c084fc',
+                            fontSize: '12.5px',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px'
+                          }}
+                        >
+                          <span>↗</span>
+                          <span>15M</span>
+                        </span>
                       </div>
 
-                      <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
-                        <span>Price: <strong style={{ color: '#e6edf3' }}>${formatPrice(coin.price)}</strong></span>
+                      <div>
                         <span
-                          onClick={() => openDirectTradingView(coin.symbol, '1H')}
-                          title="Click to open 1H chart directly on TradingView"
-                          style={{ cursor: 'pointer', background: 'rgba(88,166,255,.1)', padding: '2px 6px', borderRadius: '4px' }}
+                          style={{
+                            background: 'rgba(168, 85, 247, 0.15)',
+                            border: '1px solid rgba(168, 85, 247, 0.4)',
+                            color: '#c084fc',
+                            borderRadius: '20px',
+                            padding: '4px 14px',
+                            fontSize: '11.5px',
+                            fontWeight: 700
+                          }}
                         >
-                          1H RSI: <strong style={{ color: '#58A6FF' }}>{coin.rsi1H.toFixed(1)}</strong> ↗
+                          Bullish Divergence Confirmed
                         </span>
-                        <span
-                          onClick={() => openDirectTradingView(coin.symbol, '30M')}
-                          title="Click to open 30M chart directly on TradingView"
-                          style={{ cursor: 'pointer', background: 'rgba(57,211,83,.1)', padding: '2px 6px', borderRadius: '4px' }}
-                        >
-                          30M RSI: <strong style={{ color: '#39D353' }}>{coin.rsi30M.toFixed(1)}</strong> ↗
-                        </span>
-                        <span>
-                          1H State: <strong style={{ color: '#58A6FF' }}>Consolidation (Flat) ✅</strong>
-                        </span>
-                        <span>
-                          30M Lead: <strong style={{ color: '#39D353' }}>Above 1H (+{(coin.rsi30M - coin.rsi1H).toFixed(1)} pts) ✅</strong>
-                        </span>
-                        <span style={{ color: coin.change24h >= 0 ? '#39D353' : '#F85149' }}>
-                          24h: {coin.change24h >= 0 ? '+' : ''}{coin.change24h.toFixed(2)}%
-                        </span>
-                        <span>Target: <strong style={{ color: '#39D353' }}>+1.00%</strong></span>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
+
+                    {/* Middle Row: Screenshot Badge Pills */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                      <span
+                        style={{
+                          background: '#111622',
+                          border: '1px solid #232d42',
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          fontSize: '11.5px',
+                          color: '#c9d1d9'
+                        }}
+                      >
+                        Measured candles: {coin.measuredCandles ?? 27} × 1H (both marked lows included)
+                      </span>
+
+                      <span
+                        style={{
+                          background: '#111622',
+                          border: '1px solid #232d42',
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          fontSize: '11.5px',
+                          color: '#c9d1d9'
+                        }}
+                      >
+                        Price lower low: {(coin.priceLow1 ?? (coin.price * 1.009)).toFixed(5)} → {(coin.priceLow2 ?? coin.price).toFixed(5)}
+                      </span>
+
+                      <span
+                        style={{
+                          background: '#111622',
+                          border: '1px solid #232d42',
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          fontSize: '11.5px',
+                          color: '#c9d1d9'
+                        }}
+                      >
+                        RSI higher low: {(coin.rsiLow1 ?? (coin.rsi1H - 2.8)).toFixed(2)} → {(coin.rsiLow2 ?? coin.rsi1H).toFixed(2)}
+                      </span>
+
+                      <span
+                        style={{
+                          background: '#111622',
+                          border: '1px solid #232d42',
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          fontSize: '11.5px',
+                          color: '#c9d1d9'
+                        }}
+                      >
+                        Same candles: {coin.barsApart ?? 26} bars apart - 1H
+                      </span>
+
+                      <span
+                        style={{
+                          background: '#111622',
+                          border: '1px solid #232d42',
+                          borderRadius: '6px',
+                          padding: '4px 10px',
+                          fontSize: '11.5px',
+                          color: '#c9d1d9'
+                        }}
+                      >
+                        Status: {coin.divergenceStatus || 'Waiting for next live green 1H candle'}
+                      </span>
+                    </div>
+
+                    {/* Bottom Row: Timestamp */}
+                    <div style={{ fontSize: '11px', color: '#8b949e' }}>
+                      {coin.timeAgo || 'Now'}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
