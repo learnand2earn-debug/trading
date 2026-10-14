@@ -101,7 +101,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       } catch (err) {
         // Direct Binance API fallback if backend proxy experiences any momentary latency
         try {
-          const resp = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+          const resp = await fetch('https://data-api.binance.vision/api/v3/ticker/24hr');
           const data = await resp.json();
           const usdtMap: Record<string, { price: number; change24h: number }> = {};
           const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];

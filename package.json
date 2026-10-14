@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node backend/dist/server.js",
     "dev": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
-    "build": "npm --prefix backend install --include=dev && npm --prefix backend run build && npm --prefix frontend install --include=dev && npm --prefix frontend run build",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
     "test": "npm --prefix backend run test:all"
   },
   "engines": {

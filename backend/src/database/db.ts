@@ -24,9 +24,11 @@ class PostgresDatabase implements IDatabase {
 
   constructor(connectionString: string) {
     const isLocalhost = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+    const isRailwayInternal = connectionString.includes('.railway.internal');
+    const isSslDisabled = connectionString.includes('sslmode=disable') || isLocalhost || isRailwayInternal;
     this.pool = new pg.Pool({
       connectionString,
-      ssl: isLocalhost ? false : { rejectUnauthorized: false }
+      ssl: isSslDisabled ? false : { rejectUnauthorized: false }
     });
   }
 
@@ -75,19 +77,26 @@ export async function getDb(): Promise<IDatabase> {
     const databaseUrl = process.env.DATABASE_URL;
     let instance: IDatabase;
     if (databaseUrl && !databaseUrl.includes('pglite')) {
-      console.log('[Database] Connecting to PostgreSQL via pg Pool (with SSL)...');
-      instance = new PostgresDatabase(databaseUrl);
-    } else {
-      console.log('[Database] Initializing in-process PostgreSQL engine via PGlite (WASM)...');
-      const dataDir = process.env.DATABASE_DIR || (process.env.PERSIST_DB === 'true' ? path.resolve(process.cwd(), 'data/pglite') : undefined);
-      if (dataDir && !fs.existsSync(dataDir)) {
-        try {
-          fs.mkdirSync(dataDir, { recursive: true });
-        } catch (e) {}
+      try {
+        console.log('[Database] Connecting to PostgreSQL via pg Pool...');
+        instance = new PostgresDatabase(databaseUrl);
+        await initializeSchemaAndSeeds(instance);
+        g.__apex_db_instance = instance;
+        return instance;
+      } catch (pgErr: any) {
+        console.error('[Database] External PostgreSQL connection/init notice:', pgErr.message);
+        console.log('[Database] Falling back to in-process PGlite WASM database...');
       }
-      instance = new PGliteDatabase(dataDir);
     }
 
+    console.log('[Database] Initializing in-process PostgreSQL engine via PGlite (WASM)...');
+    const dataDir = process.env.DATABASE_DIR || (process.env.PERSIST_DB === 'true' ? path.resolve(process.cwd(), 'data/pglite') : undefined);
+    if (dataDir && !fs.existsSync(dataDir)) {
+      try {
+        fs.mkdirSync(dataDir, { recursive: true });
+      } catch (e) {}
+    }
+    instance = new PGliteDatabase(dataDir);
     await initializeSchemaAndSeeds(instance);
     g.__apex_db_instance = instance;
     return instance;

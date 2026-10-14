@@ -1,6 +1,5 @@
 import process from 'node:process';
-// @ts-ignore
-import express from '../backend/node_modules/express/index.js';
+import express from 'express';
 import http from 'http';
 import { apiRouter } from '../backend/src/routes/api.js';
 import { getDb } from '../backend/src/database/db.js';
