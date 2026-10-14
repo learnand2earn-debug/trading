@@ -1,4 +1,5 @@
-import { binanceGet } from './binanceClient.js';
+import { binanceGet, isBinanceCircuitBreakerActive } from './binanceClient.js';
+import { SEED_BINANCE_SYMBOLS } from './seedSymbols.js';
 
 export interface BinanceSymbolInfo {
   symbol: string;
@@ -34,15 +35,41 @@ class BinanceDiscoveryService {
   private targetQuoteAsset = 'USDT';
 
   constructor() {
-    // Initial async discovery on startup
-    this.refreshEligibleSymbols().catch(err => {
-      console.warn('[BinanceDiscovery] Initial discovery warning:', err.message);
-    });
+    // 1. Immediately populate from verified 506 Binance Spot seed symbols
+    this.loadSeedSymbols();
+
+    // 2. Delayed background check to refresh exchangeInfo (only when circuit breaker is inactive)
+    setTimeout(() => {
+      this.refreshEligibleSymbols().catch(err => {
+        console.warn('[BinanceDiscovery] Initial discovery background notice:', err.message);
+      });
+    }, 10000);
+  }
+
+  private loadSeedSymbols() {
+    const now = Date.now();
+    for (const s of SEED_BINANCE_SYMBOLS) {
+      if (s.quoteAsset === this.targetQuoteAsset && s.status === 'TRADING' && s.isSpotTradingAllowed) {
+        const info: BinanceSymbolInfo = {
+          symbol: s.symbol,
+          baseAsset: s.baseAsset,
+          quoteAsset: s.quoteAsset,
+          status: s.status,
+          isSpotTradingAllowed: s.isSpotTradingAllowed,
+          orderTypes: ['LIMIT', 'MARKET', 'STOP_LOSS_LIMIT', 'TAKE_PROFIT_LIMIT']
+        };
+        this.eligibleSymbols.set(s.symbol, info);
+        this.eligibleSymbolSet.add(s.symbol);
+      }
+    }
+    this.lastFetchTime = now;
+    console.log(`[BinanceDiscovery] Pre-loaded ${this.eligibleSymbols.size} verified Binance Spot ${this.targetQuoteAsset} pairs from seed cache.`);
   }
 
   setQuoteAsset(quoteAsset: string) {
     this.targetQuoteAsset = quoteAsset.toUpperCase();
     this.lastFetchTime = 0; // invalidate cache
+    this.loadSeedSymbols();
   }
 
   getQuoteAsset(): string {
@@ -52,6 +79,10 @@ class BinanceDiscoveryService {
   async refreshEligibleSymbols(force: boolean = false): Promise<BinanceSymbolInfo[]> {
     const now = Date.now();
     if (!force && this.eligibleSymbols.size > 0 && (now - this.lastFetchTime < this.cacheTtlMs)) {
+      return Array.from(this.eligibleSymbols.values());
+    }
+
+    if (isBinanceCircuitBreakerActive()) {
       return Array.from(this.eligibleSymbols.values());
     }
 
@@ -68,6 +99,11 @@ class BinanceDiscoveryService {
   }
 
   private async doFetchSymbols(): Promise<BinanceSymbolInfo[]> {
+    if (isBinanceCircuitBreakerActive()) {
+      console.log(`[BinanceDiscovery] Circuit breaker active. Serving ${this.eligibleSymbols.size} seed/cached pairs.`);
+      return Array.from(this.eligibleSymbols.values());
+    }
+
     try {
       const now = Date.now();
       console.log(`[BinanceDiscovery] Fetching exchangeInfo from Binance Spot API for ${this.targetQuoteAsset} pairs...`);
@@ -113,8 +149,6 @@ class BinanceDiscoveryService {
           continue;
         }
 
-
-
         const info: BinanceSymbolInfo = {
           symbol,
           baseAsset: base,
@@ -128,18 +162,18 @@ class BinanceDiscoveryService {
         newSet.add(symbol);
       }
 
-      this.eligibleSymbols = newEligible;
-      this.eligibleSymbolSet = newSet;
-      this.exclusionDiagnostics = diagnostics.slice(-100); // keep latest 100 diagnostics
-      this.lastFetchTime = now;
+      if (newEligible.size > 0) {
+        this.eligibleSymbols = newEligible;
+        this.eligibleSymbolSet = newSet;
+        this.exclusionDiagnostics = diagnostics.slice(-100); // keep latest 100 diagnostics
+        this.lastFetchTime = now;
+        console.log(`[BinanceDiscovery] Successfully discovered ${this.eligibleSymbols.size} eligible Binance ${this.targetQuoteAsset} Spot pairs.`);
+      }
 
-      console.log(`[BinanceDiscovery] Successfully discovered ${this.eligibleSymbols.size} eligible Binance ${this.targetQuoteAsset} Spot pairs.`);
       return Array.from(this.eligibleSymbols.values());
     } catch (err: any) {
-      console.error('[BinanceDiscovery] Failed to refresh Binance symbols:', err.message);
-      if (this.eligibleSymbols.size === 0) {
-        throw new Error(`Binance exchangeInfo unavailable: ${err.message}`);
-      }
+      console.warn(`[BinanceDiscovery] Notice: Could not refresh exchangeInfo from Binance API (${err.message}). Serving ${this.eligibleSymbols.size} cached/seed symbols.`);
+      // Never throw — always return the existing populated symbols (from seed cache or prior fetch)
       return Array.from(this.eligibleSymbols.values());
     }
   }

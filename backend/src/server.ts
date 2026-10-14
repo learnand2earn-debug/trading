@@ -10,6 +10,7 @@ import { apiRouter } from './routes/api.js';
 import { getDb } from './database/db.js';
 import { eventBus } from './core/events.js';
 import { binanceService } from './market-data/binance.js';
+import { isBinanceCircuitBreakerActive } from './market-data/binanceClient.js';
 import { candleStore } from './market-data/candleStore.js';
 import { strategyRegistry } from './strategies/index.js';
 import { masterOpportunityManager } from './risk/masterOpportunity.js';
@@ -113,16 +114,18 @@ async function startAutomatedScannerLoop() {
     'AVAXUSDT', 'LINKUSDT', 'BNBUSDT', 'ADAUSDT', 'NEARUSDT'
   ];
 
-  // Dynamically fetch top Binance gainers and add to watchlist
+  // Dynamically fetch top Binance gainers if rate limits permit
   let symbols = [...coreSymbols];
-  try {
-    const topGainers = await binanceService.getTopGainers(40);
-    const gainersSymbols = topGainers
-      .map(t => t.symbol)
-      .filter(s => !symbols.includes(s) && s.endsWith('USDT'));
-    symbols = [...symbols, ...gainersSymbols].slice(0, 50); // Cap at 50 symbols
-  } catch (e) {
-    console.warn('[Scanner] Could not fetch top gainers, using core symbols only');
+  if (!isBinanceCircuitBreakerActive()) {
+    try {
+      const topGainers = await binanceService.getTopGainers(20);
+      const gainersSymbols = topGainers
+        .map(t => t.symbol)
+        .filter(s => !symbols.includes(s) && s.endsWith('USDT'));
+      symbols = [...symbols, ...gainersSymbols].slice(0, 30);
+    } catch (e) {
+      console.warn('[Scanner] Notice: Using core symbols for surveillance');
+    }
   }
 
   console.log(`[ScannerLoop] Starting 24h Autonomous Market Surveillance on ${symbols.length} symbols`);
@@ -137,25 +140,25 @@ async function startAutomatedScannerLoop() {
     executionEngine.updateMarketPrice(symbol, candle.close);
   });
 
-  // Pre-seed initial candle history with 500 authoritative candles per timeframe
-  for (const sym of symbols) {
+  // Pre-seed initial candle history gently for core symbols only
+  for (const sym of coreSymbols) {
+    if (isBinanceCircuitBreakerActive()) {
+      console.log('[Scanner] Binance circuit breaker active, skipping initial candle pre-seed.');
+      break;
+    }
     try {
-      const [k1h, k1d, k30m, k15m] = await Promise.all([
-        binanceService.fetchKlines(sym, '1h', 500),
-        binanceService.fetchKlines(sym, '1d', 500),
-        binanceService.fetchKlines(sym, '30m', 500),
-        binanceService.fetchKlines(sym, '15m', 500)
+      const [k1h, k1d] = await Promise.all([
+        binanceService.fetchKlines(sym, '1h', 200),
+        binanceService.fetchKlines(sym, '1d', 200)
       ]);
 
       candleStore.setCandles(sym, '1h', k1h);
       candleStore.setCandles(sym, '1d', k1d);
-      candleStore.setCandles(sym, '30m', k30m);
-      candleStore.setCandles(sym, '15m', k15m);
 
-      // Small pacing pause to respect rate limits
-      await new Promise(r => setTimeout(r, 40));
+      // Pacing pause between symbols to eliminate burst rate limits
+      await new Promise(r => setTimeout(r, 250));
     } catch (e: any) {
-      console.warn(`[Scanner] Initial seed error for ${sym}:`, e.message);
+      console.warn(`[Scanner] Initial seed notice for ${sym}:`, e.message);
     }
   }
 
