@@ -75,16 +75,19 @@ export async function getDb(): Promise<IDatabase> {
 
   g.__apex_db_promise = (async () => {
     const databaseUrl = process.env.DATABASE_URL;
-    let instance: IDatabase;
+    let pgInstance: IDatabase | undefined = undefined;
     if (databaseUrl && !databaseUrl.includes('pglite')) {
       try {
         console.log('[Database] Connecting to PostgreSQL via pg Pool...');
-        instance = new PostgresDatabase(databaseUrl);
-        await initializeSchemaAndSeeds(instance);
-        g.__apex_db_instance = instance;
-        return instance;
+        pgInstance = new PostgresDatabase(databaseUrl);
+        await initializeSchemaAndSeeds(pgInstance);
+        g.__apex_db_instance = pgInstance;
+        return pgInstance;
       } catch (pgErr: any) {
         console.error('[Database] External PostgreSQL connection/init notice:', pgErr.message);
+        if (pgInstance) {
+          try { await pgInstance.close(); } catch (_) {}
+        }
         console.log('[Database] Falling back to in-process PGlite WASM database...');
       }
     }
@@ -96,10 +99,10 @@ export async function getDb(): Promise<IDatabase> {
         fs.mkdirSync(dataDir, { recursive: true });
       } catch (e) {}
     }
-    instance = new PGliteDatabase(dataDir);
-    await initializeSchemaAndSeeds(instance);
-    g.__apex_db_instance = instance;
-    return instance;
+    const pgliteInstance = new PGliteDatabase(dataDir);
+    await initializeSchemaAndSeeds(pgliteInstance);
+    g.__apex_db_instance = pgliteInstance;
+    return pgliteInstance;
   })();
 
   return g.__apex_db_promise;
@@ -108,6 +111,7 @@ export async function getDb(): Promise<IDatabase> {
 async function initializeSchemaAndSeeds(db: IDatabase) {
   const possiblePaths = [
     path.resolve(__dirname, 'schema.sql'),
+    path.resolve(__dirname, 'database/schema.sql'),
     path.resolve(__dirname, '../database/schema.sql'),
     path.resolve(__dirname, '../../src/database/schema.sql'),
     path.resolve(process.cwd(), 'src/database/schema.sql'),

@@ -162,7 +162,7 @@ class HiddenScannerService {
     let rawTickers: any[] = [];
     try {
       const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 9000 });
-      rawTickers = resp.data || [];
+      rawTickers = Array.isArray(resp?.data) ? resp.data : [];
     } catch (err: any) {
       console.warn('[HiddenScanner] Binance ticker/24hr fetch error:', err.message);
       if (this.cachedScan) return this.cachedScan;
@@ -171,6 +171,7 @@ class HiddenScannerService {
 
     // 3. Filter strictly by authentic, eligible Binance Spot pairs
     const spotPairs = rawTickers.filter((t: any) =>
+      t &&
       t.symbol &&
       binanceDiscoveryService.isEligible(t.symbol) &&
       parseFloat(t.quoteVolume || '0') > 50000 &&

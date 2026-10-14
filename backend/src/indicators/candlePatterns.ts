@@ -166,11 +166,25 @@ export function evaluateGainersMetrics(
   const isAround40Pump = pumpPct >= 32.0; // approximately 40% pump
 
   // Post-pump condition: coin should not be dumping parabolically, sellers not completely inactive
+  if (!candles || candles.length < 5) {
+    return {
+      isTopGainerEligible: false,
+      pumpPct: parseFloat((pumpPct || 0).toFixed(2)),
+      pairsValid,
+      notRestricted,
+      postPumpHealthy: false,
+      explanation: `Gainers Check: Insufficient 1H candle history (${candles ? candles.length : 0}/5 candles)`
+    };
+  }
+
   const last5 = candles.slice(-5);
-  const avgVolume = last5.reduce((s, c) => s + c.volume, 0) / 5;
+  const avgVolume = last5.reduce((s, c) => s + (c?.volume || 0), 0) / 5;
   const lastCandle = last5[last5.length - 1];
-  const sellersActive = lastCandle.volume >= avgVolume * 0.3; // seller/buyer turnover active
-  const notCrashing = lastCandle.close >= lastCandle.low * 1.002;
+  const lastVolume = lastCandle?.volume || 0;
+  const lastClose = lastCandle?.close || 0;
+  const lastLow = lastCandle?.low || 0;
+  const sellersActive = lastVolume >= avgVolume * 0.3; // seller/buyer turnover active
+  const notCrashing = lastClose >= lastLow * 1.002;
 
   const postPumpHealthy = sellersActive && notCrashing;
   const isTopGainerEligible = isAround40Pump && pairsValid && notRestricted && postPumpHealthy;

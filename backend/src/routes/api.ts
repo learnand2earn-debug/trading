@@ -932,7 +932,9 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
     const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];
 
     // Filter ONLY real tradeable Binance spot pairs (all eligible Binance Spot USDT pairs)
-    const realPairs = (resp.data || []).filter((t: any) =>
+    const rawTickers = Array.isArray(resp?.data) ? resp.data : [];
+    const realPairs = rawTickers.filter((t: any) =>
+      t &&
       t.symbol &&
       binanceDiscoveryService.isEligible(t.symbol) &&
       parseFloat(t.quoteVolume || '0') > 500 &&
@@ -1171,7 +1173,9 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
       const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 9000 });
       const usdtMap: Record<string, { price: number; change24h: number }> = {};
       const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];
-      const realPairs = resp.data.filter((t: any) =>
+      const rawTickers = Array.isArray(resp?.data) ? resp.data : [];
+      const realPairs = rawTickers.filter((t: any) =>
+        t &&
         t.symbol &&
         t.symbol.endsWith('USDT') &&
         !t.symbol.includes('UP') &&

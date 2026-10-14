@@ -31,7 +31,10 @@ export class BinanceMarketDataService {
   async getTopGainers(limit: number = 7): Promise<BinanceTicker24h[]> {
     try {
       const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 8000 });
-      const rawTickers = resp.data || [];
+      const rawTickers = resp?.data;
+      if (!Array.isArray(rawTickers)) {
+        return [];
+      }
 
       // Ensure discovery has loaded eligible pairs
       await binanceDiscoveryService.refreshEligibleSymbols();
@@ -39,7 +42,7 @@ export class BinanceMarketDataService {
       const usdtPairs: BinanceTicker24h[] = [];
 
       for (const t of rawTickers) {
-        if (!t.symbol || !binanceDiscoveryService.isEligible(t.symbol)) {
+        if (!t || !t.symbol || !binanceDiscoveryService.isEligible(t.symbol)) {
           continue;
         }
 
