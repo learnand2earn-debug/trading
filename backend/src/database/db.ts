@@ -386,4 +386,47 @@ async function initializeSchemaAndSeeds(db: IDatabase) {
   }
 
   console.log('[Database] Core seeds (admin, 7 strategies, settings, 34 agents) initialized.');
+
+  // Ensure coin_watchlist table exists (in case schema.sql hasn't updated yet)
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS coin_watchlist (
+        id TEXT PRIMARY KEY,
+        symbol TEXT NOT NULL UNIQUE,
+        clean_symbol TEXT NOT NULL,
+        added_by TEXT NOT NULL DEFAULT 'admin',
+        note TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_watchlist_symbol ON coin_watchlist(symbol)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_watchlist_active ON coin_watchlist(is_active)`);
+  } catch (e) {
+    // Table already exists — no action needed
+  }
+
+  // Seed default watchlist coins (top Binance Spot USDT majors)
+  const defaultWatchlistCoins = [
+    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT',
+    'DOGEUSDT', 'AVAXUSDT', 'ADAUSDT', 'LINKUSDT', 'NEARUSDT',
+    'MATICUSDT', 'DOTUSDT', 'LTCUSDT', 'ATOMUSDT', 'UNIUSDT',
+    'APTUSDT', 'ARBUSDT', 'OPUSDT', 'INJUSDT', 'SEIUSDT'
+  ];
+  for (const sym of defaultWatchlistCoins) {
+    try {
+      const clean = sym.replace('USDT', '');
+      const exists = await db.query('SELECT id FROM coin_watchlist WHERE symbol = $1', [sym]);
+      if (exists.rows.length === 0) {
+        const wid = `wl-${sym.toLowerCase().replace('usdt', '')}-1`;
+        await db.query(
+          `INSERT INTO coin_watchlist (id, symbol, clean_symbol, added_by, note, is_active)
+           VALUES ($1, $2, $3, 'system', 'Default monitored coin', true)`,
+          [wid, sym, clean]
+        );
+      }
+    } catch (e) {
+      // Already exists or minor error — skip
+    }
+  }
 }

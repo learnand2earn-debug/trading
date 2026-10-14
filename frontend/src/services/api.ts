@@ -191,6 +191,16 @@ export interface UserMeResponse {
   };
 }
 
+export interface WatchlistCoin {
+  id: string;
+  symbol: string;
+  clean_symbol: string;
+  added_by?: string;
+  note?: string;
+  is_active: boolean;
+  created_at: string;
+}
+
 const TOKEN_KEY = 'apex_auth_token';
 const SESSION_ID_KEY = 'scalppro_session_id';
 const LICENSE_KEY_KEY = 'scalppro_license_key';
@@ -626,6 +636,38 @@ export const api = {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
+    return res.json();
+  },
+
+  // ============================================================
+  // COIN WATCHLIST MANAGEMENT
+  // ============================================================
+
+  async getWatchlist(): Promise<{ success: boolean; coins: WatchlistCoin[]; total: number }> {
+    const res = await apiFetch('/api/watchlist', { headers: getAuthHeaders() });
+    return res.json();
+  },
+
+  async addToWatchlist(symbol: string, note?: string): Promise<{ success: boolean; message?: string; symbol?: string; cleanSymbol?: string; id?: string; alreadyExists?: boolean; error?: string }> {
+    const res = await apiFetch('/api/watchlist', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ symbol: symbol.toUpperCase(), note: note || '' })
+    });
+    return res.json();
+  },
+
+  async removeFromWatchlist(symbol: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    const sym = symbol.toUpperCase().endsWith('USDT') ? symbol.toUpperCase() : `${symbol.toUpperCase()}USDT`;
+    const res = await apiFetch(`/api/watchlist/${sym}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    return res.json();
+  },
+
+  async getFullWatchlist(): Promise<{ success: boolean; coins: WatchlistCoin[]; total: number }> {
+    const res = await apiFetch('/api/watchlist/all', { headers: getAuthHeaders() });
     return res.json();
   }
 };

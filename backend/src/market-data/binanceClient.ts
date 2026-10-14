@@ -117,17 +117,21 @@ export async function binanceGet<T = any>(
       // Handle 418 (IP auto-ban) or 429 (Rate limited) by engaging circuit breaker and stopping retries
       if (status === 418 || status === 429) {
         const retryHeader = err.response?.headers?.['retry-after'];
-        const retrySec = parseInt(retryHeader || '90', 10);
-        const cooldown = Math.min(300, Math.max(90, isNaN(retrySec) ? 90 : retrySec));
+        const retrySec = parseInt(retryHeader || '30', 10);
+        // Use shorter cooldown on cloud deployments — Binance data-api.binance.vision CDN bypasses most bans
+        const cooldown = Math.min(60, Math.max(30, isNaN(retrySec) ? 30 : retrySec));
         circuitBreakerUntil = Date.now() + (cooldown * 1000);
         circuitBreakerReason = `HTTP ${status} (Cooldown: ${cooldown}s)`;
         console.warn(`[BinanceClient] Throttled by Binance (${circuitBreakerReason}). Pausing outbound calls until ${new Date(circuitBreakerUntil).toLocaleTimeString()}.`);
+        // Rotate to next mirror before giving up — data-api.binance.vision often bypasses IP bans
+        activeEndpointIndex = (activeEndpointIndex + 1) % BINANCE_PUBLIC_ENDPOINTS.length;
         throw err; // Stop trying other mirrors immediately; ban applies to IP across all mirrors!
       }
 
       // Failover for geographic blocks (451), forbidden (403), gateway/server errors (5xx), connection aborts, DNS, timeouts:
       if (!status || status >= 403 || err.code === 'ECONNABORTED' || err.code === 'ENOTFOUND' || err.code === 'ECONNRESET') {
-        console.warn(`[BinanceClient] ${base} returned ${status || err.code || err.message}, failing over to next mirror...`);
+        const errDetail = err.code || (status ? `HTTP ${status}` : err.message);
+        console.warn(`[BinanceClient] ${base} returned ${errDetail}, failing over to next mirror...`);
         continue;
       }
 

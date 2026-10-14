@@ -596,3 +596,18 @@ CREATE TABLE IF NOT EXISTS licenses (
 );
 CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(license_key);
 
+-- ============================================================
+-- Coin Watchlist: User-managed custom coins to monitor
+-- Persists across restarts; drives V1/Hidden scanner priority
+-- ============================================================
+CREATE TABLE IF NOT EXISTS coin_watchlist (
+    id TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL UNIQUE,
+    clean_symbol TEXT NOT NULL,
+    added_by TEXT NOT NULL DEFAULT 'admin',
+    note TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_watchlist_symbol ON coin_watchlist(symbol);
+CREATE INDEX IF NOT EXISTS idx_watchlist_active ON coin_watchlist(is_active);

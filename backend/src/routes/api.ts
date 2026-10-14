@@ -1856,3 +1856,149 @@ apiRouter.post('/rsi-audit/verify-tv-ref', (req: Request, res: Response) => {
 });
 
 
+// ============================================================
+// COIN WATCHLIST MANAGEMENT — Add / Remove / List coins
+// Persisted in database so they survive restarts and redeployments
+// ============================================================
+
+// GET /api/watchlist — list all active watchlist coins
+apiRouter.get('/watchlist', async (req: Request, res: Response) => {
+  try {
+    const db = await getDb();
+    const result = await db.query(
+      `SELECT id, symbol, clean_symbol, added_by, note, is_active, created_at
+       FROM coin_watchlist
+       WHERE is_active = true
+       ORDER BY created_at ASC`
+    );
+    res.json({ success: true, coins: result.rows, total: result.rows.length });
+  } catch (e: any) {
+    res.status(500).json({ error: `Failed to fetch watchlist: ${e.message}` });
+  }
+});
+
+// POST /api/watchlist — add a coin to the watchlist
+apiRouter.post('/watchlist', async (req: Request, res: Response) => {
+  try {
+    const rawSymbol = String(req.body.symbol || '').trim().toUpperCase();
+    const note = String(req.body.note || '').trim();
+
+    if (!rawSymbol) {
+      res.status(400).json({ error: 'Symbol is required' });
+      return;
+    }
+
+    // Normalize to USDT pair
+    const symbol = rawSymbol.endsWith('USDT') ? rawSymbol : `${rawSymbol}USDT`;
+    const cleanSymbol = symbol.replace('USDT', '');
+
+    // Validate it is a real Binance eligible symbol
+    await binanceDiscoveryService.refreshEligibleSymbols();
+    if (!binanceDiscoveryService.isEligible(symbol)) {
+      res.status(400).json({
+        error: `${symbol} is not a valid Binance Spot USDT trading pair. Please check the symbol name.`
+      });
+      return;
+    }
+
+    const db = await getDb();
+
+    // Check if already in watchlist
+    const existing = await db.query(
+      'SELECT id, is_active FROM coin_watchlist WHERE symbol = $1',
+      [symbol]
+    );
+
+    if (existing.rows.length > 0) {
+      // Re-activate if it was removed before
+      if (!existing.rows[0].is_active) {
+        await db.query(
+          'UPDATE coin_watchlist SET is_active = true, note = $1 WHERE symbol = $2',
+          [note || existing.rows[0].note, symbol]
+        );
+        res.json({ success: true, message: `${symbol} re-activated in watchlist`, symbol, cleanSymbol });
+        return;
+      }
+      res.json({ success: true, message: `${symbol} is already in your watchlist`, symbol, cleanSymbol, alreadyExists: true });
+      return;
+    }
+
+    const id = `wl-${uuidv4().slice(0, 8)}`;
+    const addedBy = (req as any).user?.username || 'admin';
+
+    await db.query(
+      `INSERT INTO coin_watchlist (id, symbol, clean_symbol, added_by, note, is_active)
+       VALUES ($1, $2, $3, $4, $5, true)`,
+      [id, symbol, cleanSymbol, addedBy, note || `Added by ${addedBy}`]
+    );
+
+    // Immediately kick off background kline pre-warm for fast scanner display
+    binanceService.fetchKlines(symbol, '1h', 200).then(candles => {
+      candleStore.setCandles(symbol, '1h', candles);
+    }).catch(() => {});
+
+    res.json({ success: true, message: `${symbol} added to watchlist successfully`, symbol, cleanSymbol, id });
+  } catch (e: any) {
+    res.status(500).json({ error: `Failed to add coin to watchlist: ${e.message}` });
+  }
+});
+
+// DELETE /api/watchlist/:symbol — remove a coin from the watchlist
+apiRouter.delete('/watchlist/:symbol', async (req: Request, res: Response) => {
+  try {
+    const rawSymbol = String(req.params.symbol || '').trim().toUpperCase();
+    const symbol = rawSymbol.endsWith('USDT') ? rawSymbol : `${rawSymbol}USDT`;
+
+    const db = await getDb();
+    const check = await db.query('SELECT id FROM coin_watchlist WHERE symbol = $1', [symbol]);
+
+    if (check.rows.length === 0) {
+      res.status(404).json({ error: `${symbol} is not in the watchlist` });
+      return;
+    }
+
+    // Soft-delete: mark inactive (preserves history)
+    await db.query('UPDATE coin_watchlist SET is_active = false WHERE symbol = $1', [symbol]);
+
+    res.json({ success: true, message: `${symbol} removed from watchlist`, symbol });
+  } catch (e: any) {
+    res.status(500).json({ error: `Failed to remove coin from watchlist: ${e.message}` });
+  }
+});
+
+// GET /api/watchlist/all — list all coins (including inactive) for admin view
+apiRouter.get('/watchlist/all', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = await getDb();
+    const result = await db.query(
+      `SELECT id, symbol, clean_symbol, added_by, note, is_active, created_at
+       FROM coin_watchlist
+       ORDER BY created_at DESC`
+    );
+    res.json({ success: true, coins: result.rows, total: result.rows.length });
+  } catch (e: any) {
+    res.status(500).json({ error: `Failed to fetch full watchlist: ${e.message}` });
+  }
+});
+
+// POST /api/watchlist/:symbol/toggle — toggle active state
+apiRouter.post('/watchlist/:symbol/toggle', optionalAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const rawSymbol = String(req.params.symbol || '').trim().toUpperCase();
+    const symbol = rawSymbol.endsWith('USDT') ? rawSymbol : `${rawSymbol}USDT`;
+
+    const db = await getDb();
+    const check = await db.query('SELECT id, is_active FROM coin_watchlist WHERE symbol = $1', [symbol]);
+    if (check.rows.length === 0) {
+      res.status(404).json({ error: `${symbol} not found in watchlist` });
+      return;
+    }
+
+    const newState = !check.rows[0].is_active;
+    await db.query('UPDATE coin_watchlist SET is_active = $1 WHERE symbol = $2', [newState, symbol]);
+
+    res.json({ success: true, symbol, is_active: newState, message: `${symbol} is now ${newState ? 'active' : 'inactive'} in watchlist` });
+  } catch (e: any) {
+    res.status(500).json({ error: `Failed to toggle watchlist coin: ${e.message}` });
+  }
+});
