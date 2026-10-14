@@ -61,7 +61,7 @@ const getLocalTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
 };
 
 export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () => {
-  const [isScanning, setIsScanning] = useState(false);
+  const [isScanning, setIsScanning] = useState(true);
   const [isScanInProgress, setIsScanInProgress] = useState(false);
   const [lastScanTime, setLastScanTime] = useState<string>(() => getLocalTimeStr());
   const [soundOn, setSoundOn] = useState(true);

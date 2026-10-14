@@ -62,7 +62,7 @@ const getLocalTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
 };
 
 export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => {
-  const [isScanning, setIsScanning] = useState(false);
+  const [isScanning, setIsScanning] = useState(true);
   const [isScanInProgress, setIsScanInProgress] = useState(false);
   const [countdown, setCountdown] = useState<number>(30);
   const [soundOn, setSoundOn] = useState(true);
