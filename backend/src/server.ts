@@ -23,11 +23,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 4000;
-const HOST = process.env.HOST || '0.0.0.0';
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
+const HOST = '0.0.0.0';
 
 app.use(cors({ origin: '*' }));
 app.use(express.json());
+
+// Fast-path health endpoints for Cloud Load Balancers (Render, Fly.io, Railway)
+app.get('/health', (_req, res) => res.status(200).send('OK'));
+app.get('/api/health', (_req, res) => res.status(200).json({ status: 'HEALTHY', timestamp: Date.now() }));
 
 // Mount API router
 app.use('/api', apiRouter);
@@ -200,13 +204,19 @@ async function startAutomatedScannerLoop() {
   }, 15000);
 }
 
-server.listen(Number(PORT), HOST, async () => {
+server.listen(Number(PORT), HOST, () => {
   console.log(`=======================================================`);
   console.log(` ApexCrypto Pro Server running on http://${HOST}:${PORT}`);
   console.log(` WebSocket Gateway at ws://${HOST}:${PORT}/ws`);
   console.log(`=======================================================`);
 
-  // Initialize DB and run scanner
-  await getDb();
-  startAutomatedScannerLoop();
+  // Defer database initialization and scanner loop so port binding is immediate
+  setImmediate(async () => {
+    try {
+      await getDb();
+      startAutomatedScannerLoop();
+    } catch (err: any) {
+      console.error('[ScannerLoop] Initialization notice:', err.message);
+    }
+  });
 });

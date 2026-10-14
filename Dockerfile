@@ -29,7 +29,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
-ENV PORT=4000
+ENV PORT=10000
 
 # Copy package manifests and production dependencies
 COPY package*.json ./
@@ -40,6 +40,6 @@ RUN npm install --omit=dev
 COPY --from=builder /app/backend/dist ./backend/dist
 COPY --from=builder /app/frontend/dist ./frontend/dist
 
-EXPOSE 4000
+EXPOSE 10000
 
 CMD ["node", "backend/dist/server.js"]

@@ -831,32 +831,35 @@ function startRsiBackgroundWorker() {
   if (rsiBackgroundWorkerRunning) return;
   rsiBackgroundWorkerRunning = true;
 
-  // Immediate fast initial market sweep across all 506 coins
+  // Graceful market pre-warm once server has booted and port is active
   const fastInitialSweep = async () => {
     try {
       await binanceDiscoveryService.refreshEligibleSymbols();
       const all = binanceDiscoveryService.getEligibleSymbols();
       if (!all || all.length === 0) return;
-      console.log(`[RSIWorker] Starting immediate fast pre-warm for ${all.length} Binance Spot pairs...`);
-      const concurrency = 12;
+      console.log(`[RSIWorker] Starting paced market pre-warm for ${all.length} Binance Spot pairs...`);
+      const concurrency = 4;
       let idx = 0;
       const worker = async () => {
         while (idx < all.length) {
           const sym = all[idx++];
-          await fetchAndStoreKlines(sym, activeOverviewTf || '1h', 150);
-          if (activeOverviewTf && activeOverviewTf !== '1h') {
-            await fetchAndStoreKlines(sym, '1h', 150);
+          if (sym) {
+            await fetchAndStoreKlines(sym, activeOverviewTf || '1h', 150);
+            if (activeOverviewTf && activeOverviewTf !== '1h') {
+              await fetchAndStoreKlines(sym, '1h', 150);
+            }
+            await new Promise(r => setTimeout(r, 25));
           }
         }
       };
       await Promise.all(Array.from({ length: concurrency }, () => worker()));
       console.log(`[RSIWorker] Initial market pre-warm completed successfully across all pairs.`);
     } catch (e: any) {
-      console.warn('[RSIWorker] Initial sweep warning:', e.message);
+      console.warn('[RSIWorker] Initial sweep notice:', e.message);
     }
   };
 
-  setTimeout(fastInitialSweep, 500);
+  setTimeout(fastInitialSweep, 12000);
 
   let currentBatchIndex = 0;
   setInterval(async () => {
