@@ -99,12 +99,10 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
             initialLogs.push({ time: timeStr, msg: `${s.symbol} - V1 Scalping Setup (RSI 1H: ${s.rsi1H})` });
           });
           setLogs(initialLogs);
-        } else {
-          setSignals([]);
         }
       })
       .catch(() => {
-        setSignals([]);
+        // Keep existing signals on initial load error
       });
   }, []);
 
@@ -119,6 +117,9 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
         const newSignals = data.signals || [];
 
         setSignals(prevSignals => {
+          if (newSignals.length === 0) {
+            return prevSignals; // Retain existing signals
+          }
           const prevMap = new Map(prevSignals.map(s => [s.symbol, s]));
           const freshAlerts = newSignals.filter(s => !prevMap.has(s.symbol) || s.timeAgo === 'just now');
 
@@ -136,16 +137,24 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
             ]);
           }
 
-          return newSignals;
+          // Merge: update existing, append new
+          for (const s of newSignals) {
+            prevMap.set(s.symbol, s);
+          }
+          return Array.from(prevMap.values()).sort((a, b) => (b.detectedAt || 0) - (a.detectedAt || 0));
         });
 
-        setActiveCoins(data.activeCoins || []);
+        if (data.activeCoins && data.activeCoins.length > 0) {
+          setActiveCoins(data.activeCoins);
+        }
         setLastScanTime(data.lastScanTimeStr || timeStr);
-      } else {
-        setSignals([]);
       }
     } catch (e) {
-      setSignals([]);
+      // Keep existing signals and log network notice
+      setLogs(prev => [
+        { time: timeStr, msg: `Scan paused momentarily (network retry active) - retaining previous signals` },
+        ...prev.slice(0, 35)
+      ]);
     } finally {
       setIsScanInProgress(false);
     }

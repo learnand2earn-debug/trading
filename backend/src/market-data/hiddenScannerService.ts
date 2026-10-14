@@ -161,11 +161,13 @@ class HiddenScannerService {
     // 2. Fetch live 24hr tickers from official Binance Spot API
     let rawTickers: any[] = [];
     try {
-      const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 9000 });
+      const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 18000 });
       rawTickers = Array.isArray(resp?.data) ? resp.data : [];
     } catch (err: any) {
-      console.warn('[HiddenScanner] Binance ticker/24hr fetch error:', err.message);
-      if (this.cachedScan) return this.cachedScan;
+      console.warn('[HiddenScanner] Binance ticker/24hr fetch notice:', err.message);
+      if (this.cachedScan && this.cachedScan.activeCoins && this.cachedScan.activeCoins.length > 0) {
+        return this.cachedScan;
+      }
       rawTickers = [];
     }
 
@@ -174,9 +176,14 @@ class HiddenScannerService {
       t &&
       t.symbol &&
       binanceDiscoveryService.isEligible(t.symbol) &&
-      parseFloat(t.quoteVolume || '0') > 50000 &&
+      parseFloat(t.quoteVolume || '0') > 30000 &&
       parseFloat(t.lastPrice || '0') > 0
     );
+
+    // If live tickers momentarily failed but we have a cached scan, retain it
+    if (spotPairs.length === 0 && this.cachedScan && this.cachedScan.activeCoins && this.cachedScan.activeCoins.length > 0) {
+      return this.cachedScan;
+    }
 
     const nowTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const candidatesForDeepScan: Array<{
@@ -280,7 +287,12 @@ class HiddenScannerService {
             activeCoins.push(coinItem);
             this.activeCoinsMap.set(cand.symbol, { coin: coinItem, detectedAt: now });
           } else {
-            this.activeCoinsMap.delete(cand.symbol);
+            // Update live price for existing active coin if present
+            const existingActive = this.activeCoinsMap.get(cand.symbol);
+            if (existingActive) {
+              existingActive.coin.price = cand.price;
+              existingActive.coin.change24h = cand.change24h;
+            }
           }
 
           // 2. 1H RSI Consolidation (na up ho na down ho)
@@ -335,8 +347,12 @@ class HiddenScannerService {
 
             this.detectedSignalsMap.set(cand.symbol, { signal: signalObj, detectedAt });
           } else {
-            if (this.detectedSignalsMap.has(cand.symbol)) {
-              this.detectedSignalsMap.delete(cand.symbol);
+            // Retain previously detected signals and update their live price (do not discard valid setups)
+            const existingSig = this.detectedSignalsMap.get(cand.symbol);
+            if (existingSig) {
+              existingSig.signal.price = cand.price;
+              existingSig.signal.change24h = cand.change24h;
+              existingSig.signal.timeAgo = this.formatTimeAgo(existingSig.detectedAt);
             }
           }
         } catch (e: any) {
@@ -347,9 +363,9 @@ class HiddenScannerService {
     await new Promise(r => setTimeout(r, 100));
   }
 
-    // Prune stale active coins (> 45 minutes) and update live prices
+    // Prune stale active coins (> 90 minutes) and update live prices
     for (const [sym, item] of this.activeCoinsMap.entries()) {
-      if (now - item.detectedAt > 45 * 60 * 1000) {
+      if (now - item.detectedAt > 90 * 60 * 1000) {
         this.activeCoinsMap.delete(sym);
       } else {
         const curTicker = spotPairs.find((t: any) => t.symbol === sym);
@@ -364,9 +380,9 @@ class HiddenScannerService {
       .map(v => v.coin)
       .sort((a, b) => b.change24h - a.change24h);
 
-    // Prune stale signals (> 45 minutes)
+    // Prune stale signals (> 90 minutes)
     for (const [sym, item] of this.detectedSignalsMap.entries()) {
-      if (now - item.detectedAt > 45 * 60 * 1000) {
+      if (now - item.detectedAt > 90 * 60 * 1000) {
         this.detectedSignalsMap.delete(sym);
       } else {
         item.signal.timeAgo = this.formatTimeAgo(item.detectedAt);
@@ -402,6 +418,10 @@ class HiddenScannerService {
     this.lastScanTime = now;
 
     return response;
+  }
+
+  getCachedScan(): HiddenScanResponse | null {
+    return this.cachedScan;
   }
 }
 

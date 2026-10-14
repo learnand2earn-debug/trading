@@ -97,13 +97,10 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
             initialLogs.push({ time: timeStr, msg: `${s.symbol} - 1H Consolidation + 30M Lead (RSI 1H: ${s.rsi1H})` });
           });
           setLogs(initialLogs);
-        } else {
-          setActiveCoins([]);
-          setSignals([]);
         }
       })
       .catch(() => {
-        setSignals([]);
+        // Keep existing signals on initial load error
       });
   }, [rsiMin, rsiMax]);
 
@@ -128,6 +125,9 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
         setProgressWidth('100%');
 
         setSignals(prevSignals => {
+          if (confirmedSigs.length === 0) {
+            return prevSignals; // Retain existing signals
+          }
           const prevMap = new Map(prevSignals.map(s => [s.symbol, s]));
           const freshAlerts = confirmedSigs.filter(s => !prevMap.has(s.symbol) || s.timeAgo === 'just now');
 
@@ -148,21 +148,29 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
             ]);
           }
 
-          return confirmedSigs;
+          // Merge: update existing, append new
+          for (const s of confirmedSigs) {
+            prevMap.set(s.symbol, s);
+          }
+          return Array.from(prevMap.values()).sort((a, b) => (b.detectedAt || 0) - (a.detectedAt || 0));
         });
 
-        setActiveCoins(activeList);
+        if (activeList.length > 0) {
+          setActiveCoins(activeList);
+        }
         setLastScanTime(data.lastScanTimeStr || timeStr);
-        setStatusLabel(`Active · Monitoring ${activeList.length} Hidden Bullish pairs in RSI ${rsiMin}–${rsiMax} zone`);
+        setStatusLabel(`Active · Monitoring ${activeList.length || 'Binance'} Hidden Bullish pairs in RSI ${rsiMin}–${rsiMax} zone`);
 
         setTimeout(() => setProgressWidth('0%'), 1000);
-      } else {
-        setSignals([]);
       }
     } catch (e) {
       setProgressWidth('0%');
       setStatusLabel('Active · Monitoring Hidden Bullish pairs');
-      setSignals([]);
+      // Keep existing signals and log network notice
+      setLogs(prev => [
+        { time: timeStr, msg: `Scan paused momentarily (network retry active) - retaining previous signals` },
+        ...prev.slice(0, 35)
+      ]);
     } finally {
       setIsScanInProgress(false);
     }

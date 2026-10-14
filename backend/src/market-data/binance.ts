@@ -107,35 +107,44 @@ export class BinanceMarketDataService {
     }
   }
 
+  private wsHosts = [
+    'wss://data-stream.binance.vision',
+    'wss://stream.binance.com:9443'
+  ];
+  private currentWsHostIndex = 0;
+
   connectWebSocket(symbols: string[], intervals: string[] = ['15m', '30m', '1h', '1d']) {
     if (this.ws) {
       this.ws.removeAllListeners();
-      this.ws.close();
+      try { this.ws.close(); } catch (_) {}
+      this.ws = null;
     }
 
     if (symbols.length === 0) return;
 
     const streams = symbols
-      .slice(0, 20) // batch top symbols for WS connection
+      .slice(0, 15) // batch top 15 symbols (60 streams) for rock-solid stability
       .flatMap(sym => intervals.map(int => `${sym.toLowerCase()}@kline_${int}`))
       .join('/');
 
-    const streamUrl = `${this.wsBaseUrl}/${streams}`;
-    console.log(`[BinanceWS] Connecting stream: ${streamUrl.slice(0, 60)}...`);
+    const host = this.wsHosts[this.currentWsHostIndex];
+    const streamUrl = `${host}/stream?streams=${streams}`;
+    console.log(`[BinanceWS] Connecting stream via ${host}...`);
 
     try {
       this.ws = new WebSocket(streamUrl);
 
       this.ws.on('open', () => {
         this.isConnected = true;
-        console.log('[BinanceWS] Connected successfully.');
+        console.log(`[BinanceWS] Connected successfully to ${host}.`);
       });
 
       this.ws.on('message', (data: WebSocket.Data) => {
         try {
           const parsed = JSON.parse(data.toString());
-          if (parsed.e === 'kline') {
-            const k = parsed.k;
+          const payload = parsed.data || parsed;
+          if (payload && payload.e === 'kline') {
+            const k = payload.k;
             const candle: Candle = {
               openTime: k.t,
               open: parseFloat(k.o),
@@ -148,7 +157,7 @@ export class BinanceMarketDataService {
             };
 
             if (this.onCandleCallback) {
-              this.onCandleCallback(parsed.s, k.i, candle);
+              this.onCandleCallback(payload.s, k.i, candle);
             }
           }
         } catch (e) {
@@ -157,26 +166,27 @@ export class BinanceMarketDataService {
       });
 
       this.ws.on('error', (err: any) => {
-        console.warn('[BinanceWS] Error:', err.message);
-        this.reconnect(symbols, intervals);
+        console.warn(`[BinanceWS] Error on ${host}:`, err.message);
+        this.rotateAndReconnect(symbols, intervals);
       });
 
       this.ws.on('close', () => {
         this.isConnected = false;
-        console.warn('[BinanceWS] Closed, scheduling reconnect...');
-        this.reconnect(symbols, intervals);
+        console.warn(`[BinanceWS] Closed on ${host}, scheduling reconnect...`);
+        this.rotateAndReconnect(symbols, intervals);
       });
     } catch (err: any) {
       console.warn('[BinanceWS] Connection failure:', err.message);
-      this.reconnect(symbols, intervals);
+      this.rotateAndReconnect(symbols, intervals);
     }
   }
 
-  private reconnect(symbols: string[], intervals: string[]) {
+  private rotateAndReconnect(symbols: string[], intervals: string[]) {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.currentWsHostIndex = (this.currentWsHostIndex + 1) % this.wsHosts.length;
     this.reconnectTimer = setTimeout(() => {
       this.connectWebSocket(symbols, intervals);
-    }, 5000);
+    }, 4000);
   }
 
   getIsConnected(): boolean {

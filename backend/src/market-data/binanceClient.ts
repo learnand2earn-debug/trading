@@ -7,7 +7,11 @@ import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
  * Datacenter IPs (Render, AWS, GCP, etc.) must route strictly through this CDN endpoint.
  */
 export const BINANCE_PUBLIC_ENDPOINTS = [
-  'https://data-api.binance.vision'
+  'https://data-api.binance.vision',
+  'https://api.binance.com',
+  'https://api1.binance.com',
+  'https://api2.binance.com',
+  'https://api3.binance.com'
 ];
 
 let activeEndpointIndex = 0;
@@ -22,9 +26,9 @@ export function getBinanceCircuitBreakerRemainingSec(): number {
   return Math.max(0, Math.ceil((circuitBreakerUntil - Date.now()) / 1000));
 }
 
-// Global pacer: enforces at least 200ms gap between outgoing requests (~5 req/sec max)
+// Global pacer: enforces at least 150ms gap between outgoing requests
 let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL_MS = 200;
+const MIN_REQUEST_INTERVAL_MS = 150;
 let requestQueue = Promise.resolve();
 
 function throttleRequest(): Promise<void> {
@@ -49,8 +53,7 @@ export const BINANCE_BROWSER_HEADERS = {
 
 /**
  * Perform a resilient, rate-limited GET request to Binance public REST API.
- * Uses Binance CloudFront CDN ('https://data-api.binance.vision') exclusively
- * to eliminate cloud provider HTTP 418 IP bans.
+ * Automatically rotates across official Binance mirrors on ECONNABORTED or network timeouts.
  */
 export async function binanceGet<T = any>(
   pathOrUrl: string,
@@ -68,7 +71,7 @@ export async function binanceGet<T = any>(
   // Enforce gentle spacing between requests
   await throttleRequest();
 
-  // If a full URL is provided (e.g. api.binance.com), strip hostname and route to CloudFront CDN
+  // If a full URL is provided (e.g. api.binance.com), strip hostname and route via active endpoint
   let path = pathOrUrl;
   if (path.startsWith('http')) {
     try {
@@ -88,23 +91,30 @@ export async function binanceGet<T = any>(
     ...(config.headers || {})
   };
 
-  const primaryBase = BINANCE_PUBLIC_ENDPOINTS[0];
-  const fullUrl = `${primaryBase}${path}`;
-  const maxRetries = 2;
+  const totalEndpoints = BINANCE_PUBLIC_ENDPOINTS.length;
+  const maxRetries = 3;
   let lastError: any = null;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const endpointIdx = (activeEndpointIndex + attempt) % totalEndpoints;
+    const currentBase = BINANCE_PUBLIC_ENDPOINTS[endpointIdx];
+    const fullUrl = `${currentBase}${path}`;
+
     if (attempt > 0) {
-      // Backoff pause before retry
-      await new Promise(r => setTimeout(r, 600 * attempt));
+      await new Promise(r => setTimeout(r, 400 * attempt));
     }
 
     try {
       const response = await axios.get<T>(fullUrl, {
         ...config,
         headers: mergedHeaders,
-        timeout: config.timeout || 12000
+        timeout: config.timeout || 18000
       });
+
+      // Update active endpoint on success so future requests use this working host
+      if (endpointIdx !== activeEndpointIndex) {
+        activeEndpointIndex = endpointIdx;
+      }
 
       return response;
     } catch (err: any) {
@@ -122,9 +132,9 @@ export async function binanceGet<T = any>(
         throw err;
       }
 
-      // If HTTP 418 was encountered (legacy IP ban), bypass circuit breaker since data-api.binance.vision is CDN-backed
+      // If HTTP 418 was encountered (legacy IP ban on datacenter), rotate to next endpoint
       if (status === 418) {
-        console.warn(`[BinanceClient] Notice: HTTP 418 bypassed on CloudFront CDN endpoint.`);
+        console.warn(`[BinanceClient] HTTP 418 on ${currentBase}, rotating to mirror...`);
         continue;
       }
 
@@ -133,10 +143,10 @@ export async function binanceGet<T = any>(
         throw err;
       }
 
-      // Network abort or 5xx: log and retry
+      // Network abort, timeout, or 5xx: log and try next mirror
       const errDetail = err.code || (status ? `HTTP ${status}` : err.message);
-      if (attempt < maxRetries) {
-        console.warn(`[BinanceClient] ${primaryBase} returned ${errDetail}, retrying (attempt ${attempt + 1}/${maxRetries})...`);
+      if (attempt < maxRetries - 1) {
+        console.warn(`[BinanceClient] ${currentBase} returned ${errDetail}, rotating to mirror ${BINANCE_PUBLIC_ENDPOINTS[(endpointIdx + 1) % totalEndpoints]} (attempt ${attempt + 1}/${maxRetries})...`);
       }
     }
   }
@@ -145,5 +155,5 @@ export async function binanceGet<T = any>(
 }
 
 export function getActiveBinanceEndpoint(): string {
-  return BINANCE_PUBLIC_ENDPOINTS[0];
+  return BINANCE_PUBLIC_ENDPOINTS[activeEndpointIndex];
 }

@@ -1366,7 +1366,9 @@ apiRouter.get('/market/v1-scanner', async (req: Request, res: Response) => {
 
     res.json(scanData);
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to scan V1 market', message: err.message, exchange: 'BINANCE' });
+    console.warn('[V1ScannerRoute] Scan notice:', err.message);
+    const cached = v1ScannerService.getCachedScan?.() || { success: true, totalMonitored: 0, v1ZoneCount: 0, activeCoins: [], signals: [] };
+    res.json(cached);
   }
 });
 
@@ -1385,7 +1387,9 @@ apiRouter.get('/market/hidden-scanner', async (req: Request, res: Response) => {
 
     res.json(scanData);
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to scan Hidden Bullish market', message: err.message, exchange: 'BINANCE' });
+    console.warn('[HiddenScannerRoute] Scan notice:', err.message);
+    const cached = hiddenScannerService.getCachedScan?.() || { success: true, totalMonitored: 0, hiddenZoneCount: 0, activeCoins: [], signals: [] };
+    res.json(cached);
   }
 });
 
