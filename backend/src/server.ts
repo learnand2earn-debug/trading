@@ -217,9 +217,14 @@ server.listen(Number(PORT), HOST, () => {
   setImmediate(async () => {
     try {
       await getDb();
-      startAutomatedScannerLoop();
+      // Allow server port, health checks, and database to settle before launching heavy market surveillance
+      setTimeout(() => {
+        startAutomatedScannerLoop().catch(err => {
+          console.error('[ScannerLoop] Initialization notice:', err.message);
+        });
+      }, 3500);
     } catch (err: any) {
-      console.error('[ScannerLoop] Initialization notice:', err.message);
+      console.error('[ScannerLoop] DB Initialization notice:', err.message);
     }
   });
 });
