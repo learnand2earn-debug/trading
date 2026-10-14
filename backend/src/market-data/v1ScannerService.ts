@@ -61,6 +61,7 @@ export interface V1ScanResponse {
 class V1ScannerService {
   private scanCursor = 0;
   private detectedSignalsMap = new Map<string, { signal: V1CandidateSignal; detectedAt: number }>();
+  private activeCoinsMap = new Map<string, { coin: V1ActiveCoin; detectedAt: number }>();
 
   // Cached Kline Data per symbol with TTL
   private klineCache = new Map<
@@ -108,10 +109,10 @@ class V1ScannerService {
 
     try {
       const [k15, k30, k1h, k1d] = await Promise.all([
-        binanceService.fetchKlines(symbol, '15m', 500),
-        binanceService.fetchKlines(symbol, '30m', 500),
-        binanceService.fetchKlines(symbol, '1h', 500),
-        binanceService.fetchKlines(symbol, '1d', 500)
+        binanceService.fetchKlines(symbol, '15m', 100),
+        binanceService.fetchKlines(symbol, '30m', 100),
+        binanceService.fetchKlines(symbol, '1h', 100),
+        binanceService.fetchKlines(symbol, '1d', 100)
       ]);
 
       // Populate global candle store for cross-site consistency
@@ -191,30 +192,43 @@ class V1ScannerService {
       quoteVolume: number;
     }> = [];
 
-    // Ticker screen: coins with positive or consolidating 24h momentum
+    // Estimate 1H RSI from 24h ticker geometry to target candidates in the selected RSI zone
+    const estimateRsi = (t: any): number => {
+      const lastPrice = parseFloat(t.lastPrice || '0');
+      const high = parseFloat(t.highPrice || '0');
+      const low = parseFloat(t.lowPrice || '0');
+      const change24h = parseFloat(t.priceChangePercent || '0');
+      const range = high - low;
+      const pos = range > 0 ? (lastPrice - low) / range : 0.5;
+      const bonus = Math.max(-28, Math.min(28, change24h * 0.65));
+      return Math.max(12, Math.min(94, 32 + pos * 36 + bonus));
+    };
+
+    const targetRsiMid = (rsiMin + rsiMax) / 2; // standard 55 for V1 zone (50-60)
+
     for (const t of spotPairs) {
       const clean = t.symbol.replace('USDT', '');
       const price = parseFloat(t.lastPrice);
       const change24h = parseFloat(t.priceChangePercent);
       const quoteVolume = parseFloat(t.quoteVolume || '0');
+      const estRsi = estimateRsi(t);
+      const dist = Math.abs(estRsi - targetRsiMid);
 
-      // Tickers with healthy volume and positive trend momentum are scanned
-      if (change24h > -8.0) {
-        candidatesForDeepScan.push({
-          symbol: t.symbol,
-          cleanSymbol: clean,
-          price,
-          change24h,
-          quoteVolume
-        });
-      }
+      candidatesForDeepScan.push({
+        symbol: t.symbol,
+        cleanSymbol: clean,
+        price,
+        change24h,
+        quoteVolume,
+        dist
+      } as any);
     }
 
-    // Sort candidates by 24h change descending
-    candidatesForDeepScan.sort((a, b) => b.change24h - a.change24h);
+    // Sort candidates: closest to target RSI zone comes FIRST!
+    candidatesForDeepScan.sort((a: any, b: any) => a.dist - b.dist);
 
     // Batch evaluation: rotate through candidates to respect rate limits
-    const batchSize = 16;
+    const batchSize = 12;
     const totalCandidates = candidatesForDeepScan.length;
     const startIdx = totalCandidates > 0 ? this.scanCursor % totalCandidates : 0;
     this.scanCursor = (startIdx + batchSize) % (totalCandidates || 1);
@@ -224,7 +238,7 @@ class V1ScannerService {
       deepCandidates = deepCandidates.concat(candidatesForDeepScan.slice(0, batchSize - deepCandidates.length));
     }
 
-    // Always include top 4 volume candidates
+    // Always include top 4 volume candidates (BTC, ETH, SOL, BNB)
     const topVolumeCandidates = [...candidatesForDeepScan].sort((a, b) => b.quoteVolume - a.quoteVolume).slice(0, 4);
     for (const topCand of topVolumeCandidates) {
       if (!deepCandidates.some(c => c.symbol === topCand.symbol)) {
@@ -232,22 +246,25 @@ class V1ScannerService {
       }
     }
 
-    await Promise.all(
-      deepCandidates.map(async (cand) => {
-        try {
-          const klines = await this.fetchKlinesForSymbol(cand.symbol);
-          if (klines.candles1h.length < 20) return;
+    // Evaluate candidates in paced chunks of 4 to prevent network queue congestion
+    for (let i = 0; i < deepCandidates.length; i += 4) {
+      const chunk = deepCandidates.slice(i, i + 4);
+      await Promise.all(
+        chunk.map(async (cand) => {
+          try {
+            const klines = await this.fetchKlinesForSymbol(cand.symbol);
+            if (!klines.candles1h || klines.candles1h.length < 15) return;
 
-          // 1. Authoritative Multi-Timeframe Wilder RSIs
-          const rsi1HResult = calculateRSI(klines.candles1h, 14, { symbol: cand.symbol, timeframe: '1h' });
-          const rsi30MResult = calculateRSI(klines.candles30m, 14, { symbol: cand.symbol, timeframe: '30m' });
-          const rsi15MResult = calculateRSI(klines.candles15m, 14, { symbol: cand.symbol, timeframe: '15m' });
-          const rsi1DResult = calculateRSI(klines.candles1d, 14, { symbol: cand.symbol, timeframe: '1d' });
+            // 1. Authoritative Multi-Timeframe Wilder RSIs
+            const rsi1HResult = calculateRSI(klines.candles1h, 14, { symbol: cand.symbol, timeframe: '1h' });
+            const rsi30MResult = calculateRSI(klines.candles30m, 14, { symbol: cand.symbol, timeframe: '30m' });
+            const rsi15MResult = calculateRSI(klines.candles15m, 14, { symbol: cand.symbol, timeframe: '15m' });
+            const rsi1DResult = calculateRSI(klines.candles1d, 14, { symbol: cand.symbol, timeframe: '1d' });
 
-          const rsi1H = rsi1HResult.current;
-          const rsi30M = rsi30MResult.current;
-          const rsi15M = rsi15MResult.current;
-          const rsi1D = rsi1DResult.current;
+            const rsi1H = rsi1HResult.current;
+            const rsi30M = rsi30MResult.current;
+            const rsi15M = rsi15MResult.current;
+            const rsi1D = rsi1DResult.current;
 
           // 2. Trend detection
           const trend1DResult = detectTrend(klines.candles1d, 20);
@@ -274,7 +291,7 @@ class V1ScannerService {
 
           // If in V1 active zone, add to active coins
           if (isRsiInRange) {
-            activeCoins.push({
+            const coinItem: V1ActiveCoin = {
               symbol: cand.symbol,
               cleanSymbol: cand.cleanSymbol,
               price: cand.price,
@@ -283,7 +300,11 @@ class V1ScannerService {
               rsi30M,
               timeStr: nowTimeStr,
               tradingViewUrl: this.generateTradingViewUrl(cand.symbol, '60')
-            });
+            };
+            activeCoins.push(coinItem);
+            this.activeCoinsMap.set(cand.symbol, { coin: coinItem, detectedAt: now });
+          } else {
+            this.activeCoinsMap.delete(cand.symbol);
           }
 
           // 6. Strict V1 Confirmation:
@@ -335,6 +356,25 @@ class V1ScannerService {
         }
       })
     );
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+    // Prune stale active coins (> 45 minutes) and update live prices
+    for (const [sym, item] of this.activeCoinsMap.entries()) {
+      if (now - item.detectedAt > 45 * 60 * 1000) {
+        this.activeCoinsMap.delete(sym);
+      } else {
+        const curTicker = spotPairs.find((t: any) => t.symbol === sym);
+        if (curTicker) {
+          item.coin.price = parseFloat(curTicker.lastPrice);
+          item.coin.change24h = parseFloat(curTicker.priceChangePercent);
+        }
+      }
+    }
+
+    const allActiveCoins = Array.from(this.activeCoinsMap.values())
+      .map(v => v.coin)
+      .sort((a, b) => b.change24h - a.change24h);
 
     // Prune stale signals (> 45 minutes)
     for (const [sym, item] of this.detectedSignalsMap.entries()) {
@@ -355,11 +395,13 @@ class V1ScannerService {
       .map(v => v.signal)
       .sort((a, b) => b.detectedAt - a.detectedAt);
 
+    const finalActiveCoins = allActiveCoins.length > 0 ? allActiveCoins : activeCoins;
+
     const response: V1ScanResponse = {
       success: true,
       totalMonitored: spotPairs.length,
-      v1ZoneCount: activeCoins.length,
-      activeCoins,
+      v1ZoneCount: finalActiveCoins.length,
+      activeCoins: finalActiveCoins,
       signals: confirmedSignals,
       timestamp: now,
       lastScanTimeStr: nowTimeStr,

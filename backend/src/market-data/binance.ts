@@ -14,7 +14,7 @@ export interface BinanceTicker24h {
 }
 
 export class BinanceMarketDataService {
-  private wsBaseUrl = 'wss://stream.binance.com:9443/ws';
+  private wsBaseUrl = 'wss://data-stream.binance.vision/ws';
   private ws: WebSocket | null = null;
   private isConnected = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -68,11 +68,11 @@ export class BinanceMarketDataService {
     }
   }
 
-  async fetchKlines(symbol: string, interval: string, limit: number = 500): Promise<Candle[]> {
+  async fetchKlines(symbol: string, interval: string, limit: number = 150): Promise<Candle[]> {
     try {
       const resp = await binanceGet<any[]>('/api/v3/klines', {
-        params: { symbol, interval, limit: Math.max(limit, 500) },
-        timeout: 8000
+        params: { symbol, interval, limit: Math.min(Math.max(limit, 80), 200) },
+        timeout: 15000
       });
 
       if (!Array.isArray(resp.data)) {
