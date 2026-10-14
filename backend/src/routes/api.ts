@@ -802,7 +802,7 @@ export async function fetchAndStoreKlines(sym: string, interval: string, limit: 
     const resp = await binanceGet<any[]>(`/api/v3/klines?symbol=${sym}&interval=${cleanInterval}&limit=${limit}`, { timeout: 6000 });
     if (Array.isArray(resp.data) && resp.data.length >= 15) {
       const now = Date.now();
-      const candles: Candle[] = resp.data.map(k => {
+      const candles: Candle[] = resp.data.map((k: any) => {
         const closeTime = Number(k[6]);
         return {
           openTime: Number(k[0]),

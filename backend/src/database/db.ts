@@ -118,8 +118,8 @@ async function initializeSchemaAndSeeds(db: IDatabase) {
         console.warn('[Database] Batch exec notice, falling back to statement loop:', err.message);
         const statements = schemaSql
           .split(';')
-          .map(s => s.trim())
-          .filter(s => s.length > 0);
+          .map((s: string) => s.trim())
+          .filter((s: string) => s.length > 0);
 
         for (const stmt of statements) {
           try {
@@ -132,8 +132,8 @@ async function initializeSchemaAndSeeds(db: IDatabase) {
     } else {
       const statements = schemaSql
         .split(';')
-        .map(s => s.trim())
-        .filter(s => s.length > 0);
+        .map((s: string) => s.trim())
+        .filter((s: string) => s.length > 0);
 
       for (const stmt of statements) {
         try {

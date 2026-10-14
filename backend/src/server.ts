@@ -44,7 +44,7 @@ const frontendDist = possibleDistPaths.find(p => fs.existsSync(p));
 if (frontendDist) {
   console.log(`[Static] Serving frontend from: ${frontendDist}`);
   app.use(express.static(frontendDist));
-  app.get('*', (req, res, next) => {
+  app.get('*', (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
       return next();
     }
@@ -52,7 +52,7 @@ if (frontendDist) {
   });
 } else {
   // If frontend is not built, provide a helpful health landing page for root
-  app.get('/', (_req, res) => {
+  app.get('/', (_req: express.Request, res: express.Response) => {
     res.json({
       status: 'ApexCrypto Pro API & WebSocket Gateway Running',
       version: '1.0.0',

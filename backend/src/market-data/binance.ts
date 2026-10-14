@@ -153,7 +153,7 @@ export class BinanceMarketDataService {
         }
       });
 
-      this.ws.on('error', (err) => {
+      this.ws.on('error', (err: any) => {
         console.warn('[BinanceWS] Error:', err.message);
         this.reconnect(symbols, intervals);
       });

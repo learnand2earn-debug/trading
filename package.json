@@ -2,10 +2,14 @@
   "name": "crypto-trading-automation-platform",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
   "scripts": {
     "start": "node backend/dist/server.js",
     "dev": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
-    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "build": "npm --prefix backend install --include=dev && npm --prefix backend run build && npm --prefix frontend install --include=dev && npm --prefix frontend run build",
     "test": "npm --prefix backend run test:all",
     "postinstall": "node -e \"const { execSync } = require('child_process'); execSync('npm install --include=dev', { cwd: './backend', stdio: 'inherit' }); execSync('npm install --include=dev', { cwd: './frontend', stdio: 'inherit' });\""
   },
