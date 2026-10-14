@@ -920,8 +920,12 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
   const forceFresh = req.query.fresh === '1' || req.query.fresh === 'true';
   const cachedForTf = cachedOverviewMap[tf];
 
-  if (!forceFresh && cachedForTf && (now - cachedForTf.time < 3500)) {
-    res.json({ success: true, ...cachedForTf.data, timeframe: tf, cached: true });
+  if (cachedForTf && (now - cachedForTf.time < 15000 || (!forceFresh && now - cachedForTf.time < 60000))) {
+    res.json({ success: true, ...cachedForTf.data, timeframe: tf, cached: true, exchange: 'BINANCE', marketType: 'SPOT' });
+    return;
+  }
+  if (!cachedForTf && cachedOverview && (now - lastOverviewCacheTime < 30000)) {
+    res.json({ success: true, ...cachedOverview, timeframe: tf, cached: true, exchange: 'BINANCE', marketType: 'SPOT' });
     return;
   }
 

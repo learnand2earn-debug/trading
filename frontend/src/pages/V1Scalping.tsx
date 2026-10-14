@@ -194,6 +194,17 @@ const DEFAULT_V1_SIGNALS: V1CandidateSignal[] = [
   }
 ];
 
+const getInitialV1Signals = () => {
+  try {
+    const raw = localStorage.getItem('cached_v1_signals');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return DEFAULT_V1_SIGNALS;
+};
+
 export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => {
   const [isScanning, setIsScanning] = useState(true);
   const [isScanInProgress, setIsScanInProgress] = useState(false);
@@ -202,7 +213,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
   const [rsiMin, setRsiMin] = useState<number>(50);
   const [rsiMax, setRsiMax] = useState<number>(60);
   const [scanIntervalMin, setScanIntervalMin] = useState<number>(5);
-  const [signals, setSignals] = useState<V1CandidateSignal[]>(DEFAULT_V1_SIGNALS);
+  const [signals, setSignals] = useState<V1CandidateSignal[]>(getInitialV1Signals);
   const [activeCoins, setActiveCoins] = useState<V1ActiveCoin[]>([]);
   const [logs, setLogs] = useState<{ time: string; msg: string }[]>([]);
   const [lastScanTime, setLastScanTime] = useState<string>(() => getLocalTimeStr());
@@ -274,7 +285,11 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
           for (const s of newSignals) {
             prevMap.set(s.symbol, s);
           }
-          return Array.from(prevMap.values()).sort((a, b) => (b.detectedAt || 0) - (a.detectedAt || 0));
+          const mergedList = Array.from(prevMap.values()).sort((a, b) => (b.detectedAt || 0) - (a.detectedAt || 0));
+          try {
+            localStorage.setItem('cached_v1_signals', JSON.stringify(mergedList));
+          } catch (err) {}
+          return mergedList;
         });
 
         if (data.activeCoins && data.activeCoins.length > 0) {

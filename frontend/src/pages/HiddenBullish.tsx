@@ -198,6 +198,17 @@ const DEFAULT_HIDDEN_SIGNALS: HiddenCandidateSignal[] = [
   }
 ];
 
+const getInitialHiddenSignals = () => {
+  try {
+    const raw = localStorage.getItem('cached_hidden_signals');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return DEFAULT_HIDDEN_SIGNALS;
+};
+
 export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () => {
   const [isScanning, setIsScanning] = useState(true);
   const [isScanInProgress, setIsScanInProgress] = useState(false);
@@ -205,7 +216,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
   const [soundOn, setSoundOn] = useState(true);
   const [rsiMin, setRsiMin] = useState<number>(30); // User requirement: 30
   const [rsiMax, setRsiMax] = useState<number>(40); // User requirement: 40
-  const [signals, setSignals] = useState<HiddenCandidateSignal[]>(DEFAULT_HIDDEN_SIGNALS);
+  const [signals, setSignals] = useState<HiddenCandidateSignal[]>(getInitialHiddenSignals);
   const [activeCoins, setActiveCoins] = useState<HiddenActiveCoin[]>([]);
   const [logs, setLogs] = useState<{ time: string; msg: string }[]>([]);
   const [statusLabel, setStatusLabel] = useState('Idle');
@@ -290,7 +301,11 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
           for (const s of confirmedSigs) {
             prevMap.set(s.symbol, s);
           }
-          return Array.from(prevMap.values()).sort((a, b) => (b.detectedAt || 0) - (a.detectedAt || 0));
+          const mergedList = Array.from(prevMap.values()).sort((a, b) => (b.detectedAt || 0) - (a.detectedAt || 0));
+          try {
+            localStorage.setItem('cached_hidden_signals', JSON.stringify(mergedList));
+          } catch (err) {}
+          return mergedList;
         });
 
         if (activeList.length > 0) {

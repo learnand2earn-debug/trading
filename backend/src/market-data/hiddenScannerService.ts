@@ -283,32 +283,49 @@ class HiddenScannerService {
       return cached;
     }
 
+    const s15 = candleStore.getCandles(symbol, '15m');
+    const s30 = candleStore.getCandles(symbol, '30m');
+    const s1h = candleStore.getCandles(symbol, '1h');
+    const s1d = candleStore.getCandles(symbol, '1d');
+
+    if (s15.length >= 20 && s30.length >= 20 && s1h.length >= 20 && s1d.length >= 20) {
+      const result = {
+        candles15m: s15,
+        candles30m: s30,
+        candles1h: s1h,
+        candles1d: s1d,
+        fetchedAt: now
+      };
+      this.klineCache.set(symbol, result);
+      return result;
+    }
+
     try {
       const [k15, k30, k1h, k1d] = await Promise.all([
-        binanceService.fetchKlines(symbol, '15m', 100),
-        binanceService.fetchKlines(symbol, '30m', 100),
-        binanceService.fetchKlines(symbol, '1h', 100),
-        binanceService.fetchKlines(symbol, '1d', 100)
+        s15.length >= 20 ? Promise.resolve(s15) : binanceService.fetchKlines(symbol, '15m', 100).catch(() => s15),
+        s30.length >= 20 ? Promise.resolve(s30) : binanceService.fetchKlines(symbol, '30m', 100).catch(() => s30),
+        s1h.length >= 20 ? Promise.resolve(s1h) : binanceService.fetchKlines(symbol, '1h', 100).catch(() => s1h),
+        s1d.length >= 20 ? Promise.resolve(s1d) : binanceService.fetchKlines(symbol, '1d', 100).catch(() => s1d)
       ]);
 
       // Populate global candle store for cross-site consistency
-      candleStore.setCandles(symbol, '15m', k15);
-      candleStore.setCandles(symbol, '30m', k30);
-      candleStore.setCandles(symbol, '1h', k1h);
-      candleStore.setCandles(symbol, '1d', k1d);
+      if (k15.length > 0) candleStore.setCandles(symbol, '15m', k15);
+      if (k30.length > 0) candleStore.setCandles(symbol, '30m', k30);
+      if (k1h.length > 0) candleStore.setCandles(symbol, '1h', k1h);
+      if (k1d.length > 0) candleStore.setCandles(symbol, '1d', k1d);
 
       const result = {
-        candles15m: k15,
-        candles30m: k30,
-        candles1h: k1h,
-        candles1d: k1d,
+        candles15m: k15.length > 0 ? k15 : s15,
+        candles30m: k30.length > 0 ? k30 : s30,
+        candles1h: k1h.length > 0 ? k1h : s1h,
+        candles1d: k1d.length > 0 ? k1d : s1d,
         fetchedAt: now
       };
       this.klineCache.set(symbol, result);
       return result;
     } catch (err: any) {
       if (cached) return cached;
-      return { candles15m: [], candles30m: [], candles1h: [], candles1d: [] };
+      return { candles15m: s15, candles30m: s30, candles1h: s1h, candles1d: s1d };
     }
   }
 
@@ -410,8 +427,8 @@ class HiddenScannerService {
     // Sort candidates: closest to 30-40 target RSI zone comes FIRST!
     candidatesForDeepScan.sort((a: any, b: any) => a.dist - b.dist);
 
-    // Batch evaluation: rotate through candidates to respect rate limits
-    const batchSize = 12;
+    // Batch evaluation: rotate through candidates to discover more signals rapidly
+    const batchSize = 24;
     const totalCandidates = candidatesForDeepScan.length;
     const startIdx = totalCandidates > 0 ? this.scanCursor % totalCandidates : 0;
     this.scanCursor = (startIdx + batchSize) % (totalCandidates || 1);
