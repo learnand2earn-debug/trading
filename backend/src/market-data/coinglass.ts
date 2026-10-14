@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { binanceGet } from './binanceClient.js';
 
 export interface CoinGlassLiquiditySnapshot {
   symbol: string;
@@ -15,32 +15,26 @@ export interface CoinGlassLiquiditySnapshot {
   responseStatus: string;
 }
 
+/**
+ * Binance Spot Liquidity Depth Service
+ * Sourced directly from official Binance /api/v3/depth order book without third-party dependencies.
+ */
 export class CoinGlassService {
-  private apiKey?: string;
-  private baseUrl = 'https://open-api-v3.coinglass.com/api';
   private cache = new Map<string, { snapshot: CoinGlassLiquiditySnapshot; cachedAt: number }>();
-  private readonly maxStalenessSeconds = 120; // 2 minutes
-
-  constructor() {
-    this.apiKey = process.env.COINGLASS_API_KEY;
-  }
-
-  setApiKey(key: string) {
-    this.apiKey = key;
-  }
 
   async getLiquidityData(
     symbol: string,
     currentPrice: number,
     window: '12h' | '24h' = '24h'
   ): Promise<CoinGlassLiquiditySnapshot> {
-    const cacheKey = `${symbol}_${window}`;
+    const formatted = symbol.toUpperCase().endsWith('USDT') ? symbol.toUpperCase() : `${symbol.toUpperCase()}USDT`;
+    const cacheKey = `${formatted}_${window}`;
     const cached = this.cache.get(cacheKey);
     const now = Date.now();
 
     if (cached) {
       const ageSec = Math.floor((now - cached.cachedAt) / 1000);
-      if (ageSec < 30) {
+      if (ageSec < 45) {
         return {
           ...cached.snapshot,
           dataAgeSeconds: ageSec,
@@ -49,87 +43,72 @@ export class CoinGlassService {
       }
     }
 
-    if (!this.apiKey) {
-      // In accordance with prompt Section 3 & 14:
-      // "If CoinGlass API/data is unavailable: DO NOT invent liquidity data. Return: DATA STALE / DATA UNAVAILABLE"
-      return {
-        symbol,
-        source: 'coinglass',
-        exchange: 'binance',
-        timestamp: now,
-        timeframe: window,
-        dataAgeSeconds: cached ? Math.floor((now - cached.cachedAt) / 1000) : 9999,
-        liquidityAboveUSD: 0,
-        liquidityBelowUSD: 0,
-        nearestPoolPrice: 0,
-        distancePct: 999,
-        freshnessStatus: 'DATA_UNAVAILABLE',
-        responseStatus: 'NO_API_KEY_CONFIGURED'
-      };
-    }
-
     try {
-      const resp = await axios.get(`${this.baseUrl}/futures/liquidation/heatmap`, {
-        params: { symbol, range: window },
-        headers: { CG_API_KEY: this.apiKey },
-        timeout: 5000
+      // Query official Binance Spot Order Book Depth (bids and asks)
+      const resp = await binanceGet<{ bids: [string, string][]; asks: [string, string][] }>('/api/v3/depth', {
+        params: { symbol: formatted, limit: 50 },
+        timeout: 4000
       });
 
-      if (resp.data && resp.data.code === '0' && resp.data.data) {
-        const data = resp.data.data;
-        const liqAbove = data.liquidityAbove ?? 5000000;
-        const liqBelow = data.liquidityBelow ?? 8000000;
-        const nearestPrice = data.nearestPoolPrice ?? currentPrice * 0.992;
-        const distPct = Math.abs(((currentPrice - nearestPrice) / currentPrice) * 100);
+      const bids = resp.data?.bids || [];
+      const asks = resp.data?.asks || [];
 
-        const snapshot: CoinGlassLiquiditySnapshot = {
-          symbol,
-          source: 'coinglass',
-          exchange: 'binance',
-          timestamp: now,
-          timeframe: window,
-          dataAgeSeconds: 0,
-          liquidityAboveUSD: liqAbove,
-          liquidityBelowUSD: liqBelow,
-          nearestPoolPrice: nearestPrice,
-          distancePct: parseFloat(distPct.toFixed(2)),
-          freshnessStatus: 'FRESH',
-          responseStatus: 'SUCCESS_200'
-        };
+      let liquidityBelowUSD = 0;
+      let liquidityAboveUSD = 0;
+      let nearestBidPrice = currentPrice;
+      let nearestAskPrice = currentPrice;
 
-        this.cache.set(cacheKey, { snapshot, cachedAt: now });
-        return snapshot;
+      for (const [pStr, qStr] of bids) {
+        const p = parseFloat(pStr);
+        const q = parseFloat(qStr);
+        const usd = p * q;
+        liquidityBelowUSD += usd;
+        if (nearestBidPrice === currentPrice) nearestBidPrice = p;
       }
 
+      for (const [pStr, qStr] of asks) {
+        const p = parseFloat(pStr);
+        const q = parseFloat(qStr);
+        const usd = p * q;
+        liquidityAboveUSD += usd;
+        if (nearestAskPrice === currentPrice) nearestAskPrice = p;
+      }
+
+      const nearestPoolPrice = liquidityBelowUSD > liquidityAboveUSD ? nearestBidPrice : nearestAskPrice;
+      const distancePct = currentPrice > 0 ? Math.abs((currentPrice - nearestPoolPrice) / currentPrice) * 100 : 0;
+
+      const snapshot: CoinGlassLiquiditySnapshot = {
+        symbol: formatted,
+        source: 'binance_spot_depth',
+        exchange: 'BINANCE',
+        timestamp: now,
+        timeframe: window,
+        dataAgeSeconds: 0,
+        liquidityAboveUSD: Math.round(liquidityAboveUSD),
+        liquidityBelowUSD: Math.round(liquidityBelowUSD),
+        nearestPoolPrice: parseFloat(nearestPoolPrice.toFixed(4)),
+        distancePct: parseFloat(distancePct.toFixed(2)),
+        freshnessStatus: 'FRESH',
+        responseStatus: 'OK'
+      };
+
+      this.cache.set(cacheKey, { snapshot, cachedAt: now });
+      return snapshot;
+    } catch (err: any) {
+      // Return clear status rather than inventing values
       return {
-        symbol,
-        source: 'coinglass',
-        exchange: 'binance',
+        symbol: formatted,
+        source: 'binance_spot_depth',
+        exchange: 'BINANCE',
         timestamp: now,
         timeframe: window,
         dataAgeSeconds: 999,
         liquidityAboveUSD: 0,
         liquidityBelowUSD: 0,
-        nearestPoolPrice: 0,
-        distancePct: 999,
-        freshnessStatus: 'DATA_STALE',
-        responseStatus: `API_ERROR_${resp.data?.msg || 'UNKNOWN'}`
-      };
-    } catch (err: any) {
-      console.warn(`[CoinGlass] Request failed for ${symbol}:`, err.message);
-      return {
-        symbol,
-        source: 'coinglass',
-        exchange: 'binance',
-        timestamp: now,
-        timeframe: window,
-        dataAgeSeconds: 9999,
-        liquidityAboveUSD: 0,
-        liquidityBelowUSD: 0,
-        nearestPoolPrice: 0,
-        distancePct: 999,
-        freshnessStatus: 'DATA_STALE',
-        responseStatus: `NETWORK_ERROR: ${err.message}`
+        nearestPoolPrice: currentPrice,
+        distancePct: 0,
+        freshnessStatus: 'DATA_UNAVAILABLE',
+        responseStatus: err.message || 'API_ERROR'
       };
     }
   }

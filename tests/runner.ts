@@ -1,3 +1,4 @@
+import process from 'node:process';
 import { Candle } from '../backend/src/indicators/types.js';
 import { calculateRSI, isRSIInZone, isRSICrossingAbove, evaluate30MLeadership } from '../backend/src/indicators/rsi.js';
 import { calculateEMA, evaluateEMA9EMA33 } from '../backend/src/indicators/ema.js';
@@ -85,8 +86,8 @@ async function runAllTests() {
   assert(isRSICrossingAbove(53.2, 54.5, 54) === true, 'RSI 53.2 -> 54.5 crosses 54 upward');
 
   const leadCheck = evaluate30MLeadership(
-    { current: 53, previous: 52, slope: 'RISING', history: [50, 51, 52, 53] },
-    { current: 56, previous: 55, slope: 'RISING', history: [53, 54, 55, 56] }
+    { current: 53, previous: 52, slope: 'RISING', history: [50, 51, 52, 53] } as any,
+    { current: 56, previous: 55, slope: 'RISING', history: [53, 54, 55, 56] } as any
   );
   assert(leadCheck.leads === true, '30M RSI (54 -> 55 -> 56) positively leads 1H RSI (~53)');
 
@@ -247,7 +248,7 @@ async function runAllTests() {
     dataFreshness: 'FRESH' as const,
     heatmap24h: { nearestPoolAbovePrice: 96000, nearestPoolBelowPrice: 94000, distanceToNearestPoolPct: 0.8 },
     liquidationPools: []
-  };
+  } as any;
 
   const paResult = evaluatePriceAction('BTCUSDT', upCandles, upCandles, upCandles, mockLiq);
   assert(paResult.strategyCode === 'PRICE_ACTION', 'Strategy 1 (Price Action) returned valid code');

@@ -14,14 +14,6 @@ import {
   Clock
 } from 'lucide-react';
 import { api, UserProfile, getStoredLicenseKey } from '../services/api.js';
-import {
-  GAINERS_COINS,
-  V1_ZONE_COINS,
-  NEUTRAL_COINS,
-  HIDDEN_BULL_COINS,
-  OVERSOLD_COINS,
-  EXTREME_COINS
-} from '../data/marketCoins.js';
 
 interface ScalpProLoginProps {
   onLoginSuccess: (user: UserProfile) => void;
@@ -43,19 +35,13 @@ const FEATURES = [
   'ScalpPro Hub Real-Time WhatsApp Broadcast'
 ];
 
-// Live stats from coin data
-const TOTAL_COINS = GAINERS_COINS.length + V1_ZONE_COINS.length + NEUTRAL_COINS.length + HIDDEN_BULL_COINS.length + OVERSOLD_COINS.length + EXTREME_COINS.length;
-const V1_ZONE_COUNT = V1_ZONE_COINS.length;
-const HIDDEN_BULL_COUNT = HIDDEN_BULL_COINS.length;
-const GAINERS_COUNT = GAINERS_COINS.length;
-
 const STAT_CARDS = [
-  { label: 'Coins Monitored', value: String(TOTAL_COINS), icon: '🪙', color: '#34d399' },
-  { label: 'V1 Zone Active', value: String(V1_ZONE_COUNT), icon: '⚡', color: '#22c55e' },
-  { label: 'Hidden Bullish', value: String(HIDDEN_BULL_COUNT), icon: '🔵', color: '#60a5fa' },
-  { label: 'Top Gainers', value: String(GAINERS_COUNT), icon: '🚀', color: '#a78bfa' },
+  { label: 'Binance Spot Pairs', value: '500+', icon: '🪙', color: '#34d399' },
+  { label: 'V1 Zone Scanner', value: 'ONLINE', icon: '⚡', color: '#22c55e' },
+  { label: 'Hidden Bullish', value: 'ONLINE', icon: '🔵', color: '#60a5fa' },
+  { label: 'Wilder RMA RSI', value: 'TV MATCH', icon: '🚀', color: '#a78bfa' },
   { label: 'Market Status', value: 'LIVE', icon: '📡', color: '#34d399' },
-  { label: 'Scanners Online', value: '2 / 2', icon: '🟢', color: '#4ade80' },
+  { label: 'Exchange Mode', value: 'BINANCE SPOT', icon: '🟢', color: '#4ade80' },
 ];
 
 export const ScalpProLogin: React.FC<ScalpProLoginProps> = ({
@@ -446,12 +432,12 @@ export const ScalpProLogin: React.FC<ScalpProLoginProps> = ({
           <div style={{ marginTop: '20px', borderTop: '1px solid rgba(40,80,55,0.5)', paddingTop: '16px', textAlign: 'left' }}>
             <div style={{ fontSize: '9px', color: '#4b7a5f', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '10px' }}>RSI Market Zones</div>
             {[
-              { label: '🚀 Gainers (RSI 60+)', count: GAINERS_COUNT, color: '#a78bfa' },
-              { label: '⚡ V1 Zone (RSI 50-60)', count: V1_ZONE_COUNT, color: '#22c55e' },
-              { label: '⚖️ Neutral (RSI 40-50)', count: NEUTRAL_COINS.length, color: '#60a5fa' },
-              { label: '🔵 Hidden Bull (30-40)', count: HIDDEN_BULL_COUNT, color: '#38bdf8' },
-              { label: '🟠 Oversold (20-30)', count: OVERSOLD_COINS.length, color: '#fb923c' },
-              { label: '🔴 Extreme (10-20)', count: EXTREME_COINS.length, color: '#f87171' },
+              { label: '🚀 Gainers (RSI 60+)', count: 'Binance Spot', color: '#a78bfa' },
+              { label: '⚡ V1 Zone (RSI 50-60)', count: 'Active Matrix', color: '#22c55e' },
+              { label: '⚖️ Neutral (RSI 40-50)', count: 'Monitored', color: '#60a5fa' },
+              { label: '🔵 Hidden Bull (30-40)', count: 'Swing Pivots', color: '#38bdf8' },
+              { label: '🟠 Oversold (20-30)', count: 'Monitored', color: '#fb923c' },
+              { label: '🔴 Extreme (10-20)', count: 'Monitored', color: '#f87171' },
             ].map((z, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                 <span style={{ fontSize: '10px', color: '#9ca3af' }}>{z.label}</span>

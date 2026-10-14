@@ -1,16 +1,12 @@
-import axios from 'axios';
 import { binanceGet } from './binanceClient.js';
+import { binanceService } from './binance.js';
+import { binanceDiscoveryService } from './binanceDiscovery.js';
+import { candleStore } from './candleStore.js';
 import { Candle } from '../indicators/types.js';
-import { calculateRSI } from '../indicators/rsi.js';
+import { calculateRSI, evaluate30MLeadership } from '../indicators/rsi.js';
 import { calculateEMA } from '../indicators/ema.js';
-import { MASTER_COINS } from './masterCoins.js';
-
-// Exclude tokenized equities and fiat stablecoins to ensure ONLY original Binance crypto coins
-const EXCLUDED_NON_CRYPTO_ASSETS = new Set([
-  'NVDAB', 'TSLAB', 'AMDB', 'INTCB', 'MSTRB', 'METAB', 'MSFTB', 'PLTRB', 'QQQB', 'COINB',
-  'SPYB', 'CRCLB', 'SNDKB', 'SPCXB', 'EWYB', 'LITEB', 'CBRSB', 'MUB', 'BABAB', 'AMZNB',
-  'GMEB', 'PDDB', 'AMCB', 'HIMSB', 'FWDIB', 'MRNAB', 'USDE', 'USD1', 'EUR', 'FDUSD', 'TUSD', 'USDC', 'DAI'
-]);
+import { calculateV1SmoothedHeikenAshi } from '../indicators/v1.js';
+import { detectTrend } from '../indicators/trend.js';
 
 export interface V1CandidateSignal {
   symbol: string;
@@ -20,7 +16,7 @@ export interface V1CandidateSignal {
   rsi15M: number;
   rsi30M: number;
   rsi1H: number;
-  rsi4H: number;
+  rsi4H?: number;
   rsi1D: number;
   trend1H: 'Uptrend' | 'Downtrend' | 'Sideways';
   trend1D: 'Uptrend' | 'Downtrend' | 'Sideways';
@@ -31,6 +27,10 @@ export interface V1CandidateSignal {
   isV1Confirmed: boolean;
   timeAgo: string;
   detectedAt: number;
+  // Provenance & TradingView verification
+  tradingViewUrl: string;
+  confirmationStatus: 'CONFIRMED' | 'PENDING';
+  qualificationReason: string;
 }
 
 export interface V1ActiveCoin {
@@ -41,6 +41,7 @@ export interface V1ActiveCoin {
   rsi1H: number;
   rsi30M: number;
   timeStr: string;
+  tradingViewUrl: string;
 }
 
 export interface V1ScanResponse {
@@ -53,24 +54,21 @@ export interface V1ScanResponse {
   lastScanTimeStr: string;
   rsiMin: number;
   rsiMax: number;
+  exchange: 'BINANCE';
+  marketType: 'SPOT';
 }
 
 class V1ScannerService {
-  private validSpotSymbols: Set<string> = new Set();
-  private lastExchangeInfoTime = 0;
   private scanCursor = 0;
-
-  // Track signal history with detection timestamps for "Xm ago"
   private detectedSignalsMap = new Map<string, { signal: V1CandidateSignal; detectedAt: number }>();
 
-  // Cached Kline Data per symbol
+  // Cached Kline Data per symbol with TTL
   private klineCache = new Map<
     string,
     {
       candles15m: Candle[];
       candles30m: Candle[];
       candles1h: Candle[];
-      candles4h: Candle[];
       candles1d: Candle[];
       fetchedAt: number;
     }
@@ -80,92 +78,61 @@ class V1ScannerService {
   private lastScanTime = 0;
 
   constructor() {
-    // Keep scan data fresh in background so users get instant responses
+    // Background polling for fresh market data
     setTimeout(() => {
       this.scanV1Market({ fresh: true }).catch(() => {});
       setInterval(() => {
         this.scanV1Market({ fresh: true }).catch(() => {});
-      }, 20000);
-    }, 4000);
+      }, 25000);
+    }, 3000);
   }
 
-  // Fast, instant spot symbols from MASTER_COINS without 3.5MB network latency
-  async getValidSpotSymbols(): Promise<Set<string>> {
-    if (this.validSpotSymbols.size > 0) {
-      return this.validSpotSymbols;
-    }
-    MASTER_COINS.forEach((c) => {
-      if (!EXCLUDED_NON_CRYPTO_ASSETS.has(c.symbol)) {
-        this.validSpotSymbols.add(`${c.symbol}USDT`);
-        this.validSpotSymbols.add(c.symbol);
-      }
-    });
-    return this.validSpotSymbols;
+  generateTradingViewUrl(symbol: string, interval: string = '60'): string {
+    const formatted = symbol.toUpperCase().endsWith('USDT')
+      ? symbol.toUpperCase()
+      : `${symbol.toUpperCase()}USDT`;
+    return `https://www.tradingview.com/chart/?symbol=BINANCE%3A${formatted}&interval=${interval}`;
   }
 
-  // Fetch real Binance klines for 30m and 1h intervals for leadership & EMA trend evaluation
   async fetchKlinesForSymbol(symbol: string): Promise<{
+    candles15m: Candle[];
     candles30m: Candle[];
     candles1h: Candle[];
+    candles1d: Candle[];
   }> {
     const now = Date.now();
     const cached = this.klineCache.get(symbol);
-    if (cached && now - cached.fetchedAt < 60000) {
+    if (cached && now - cached.fetchedAt < 45000) {
       return cached;
     }
 
-    const parseKlines = (data: any[]): Candle[] => {
-      if (!Array.isArray(data)) return [];
-      return data.map((k) => ({
-        openTime: Number(k[0]),
-        open: parseFloat(k[1]),
-        high: parseFloat(k[2]),
-        low: parseFloat(k[3]),
-        close: parseFloat(k[4]),
-        volume: parseFloat(k[5]),
-        closeTime: Number(k[6]),
-        isClosed: true
-      }));
-    };
-
     try {
-      const [k30Res, k1hRes] = await Promise.all([
-        binanceGet<any[]>('/api/v3/klines', {
-          params: { symbol, interval: '30m', limit: 40 },
-          timeout: 1500
-        }),
-        binanceGet<any[]>('/api/v3/klines', {
-          params: { symbol, interval: '1h', limit: 40 },
-          timeout: 1500
-        })
+      const [k15, k30, k1h, k1d] = await Promise.all([
+        binanceService.fetchKlines(symbol, '15m', 500),
+        binanceService.fetchKlines(symbol, '30m', 500),
+        binanceService.fetchKlines(symbol, '1h', 500),
+        binanceService.fetchKlines(symbol, '1d', 500)
       ]);
 
-      const candles30m = parseKlines(k30Res.data);
-      const candles1h = parseKlines(k1hRes.data);
+      // Populate global candle store for cross-site consistency
+      candleStore.setCandles(symbol, '15m', k15);
+      candleStore.setCandles(symbol, '30m', k30);
+      candleStore.setCandles(symbol, '1h', k1h);
+      candleStore.setCandles(symbol, '1d', k1d);
 
       const result = {
-        candles15m: [] as Candle[],
-        candles30m,
-        candles1h,
-        candles4h: [] as Candle[],
-        candles1d: [] as Candle[],
+        candles15m: k15,
+        candles30m: k30,
+        candles1h: k1h,
+        candles1d: k1d,
         fetchedAt: now
       };
       this.klineCache.set(symbol, result);
       return result;
     } catch (err: any) {
       if (cached) return cached;
-      return { candles30m: [], candles1h: [] };
+      return { candles15m: [], candles30m: [], candles1h: [], candles1d: [] };
     }
-  }
-
-  computeApproximateRsi(price: number, high: number, low: number, change24h: number): number {
-    const range = high - low;
-    if (range <= 0) return 50.0;
-    const rangePos = (price - low) / range;
-    const trendFactor = Math.tanh(change24h / 15);
-    const rsi = 50 + (rangePos - 0.5) * 35 + trendFactor * 25;
-    return parseFloat(Math.max(12, Math.min(92, rsi)).toFixed(1));
   }
 
   formatTimeAgo(detectedAt: number): string {
@@ -177,7 +144,6 @@ class V1ScannerService {
     return `${diffHours}h ago`;
   }
 
-  // Main scan method
   async scanV1Market(options?: {
     rsiMin?: number;
     rsiMax?: number;
@@ -189,94 +155,65 @@ class V1ScannerService {
     const fresh = options?.fresh ?? false;
     const now = Date.now();
 
-    // Cache valid for 15 seconds, or 1.5 seconds if fresh
     if (!fresh && this.cachedScan && now - this.lastScanTime < 15000 && this.cachedScan.rsiMin === rsiMin && this.cachedScan.rsiMax === rsiMax) {
       return this.cachedScan;
     }
-    if (fresh && this.cachedScan && now - this.lastScanTime < 1500 && this.cachedScan.rsiMin === rsiMin && this.cachedScan.rsiMax === rsiMax) {
-      return this.cachedScan;
-    }
 
-    const validSpotSymbols = await this.getValidSpotSymbols();
+    // 1. Ensure dynamic Binance symbol discovery is initialized
+    await binanceDiscoveryService.refreshEligibleSymbols();
 
-    // 1. Fetch live 24hr tickers from Binance
+    // 2. Fetch live 24hr tickers from official Binance Spot API
     let rawTickers: any[] = [];
     try {
       const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 9000 });
-      rawTickers = resp.data;
+      rawTickers = resp.data || [];
     } catch (err: any) {
       console.warn('[V1Scanner] Binance ticker/24hr fetch error:', err.message);
-      if (this.cachedScan && this.cachedScan.signals.length > 0) return this.cachedScan;
+      if (this.cachedScan) return this.cachedScan;
+      rawTickers = [];
     }
 
-    if (!rawTickers || rawTickers.length === 0) {
-      rawTickers = MASTER_COINS.map(c => ({
-        symbol: c.symbol.endsWith('USDT') ? c.symbol : `${c.symbol}USDT`,
-        lastPrice: '1.25',
-        priceChangePercent: c.change24h.toString(),
-        highPrice: '1.35',
-        lowPrice: '1.15',
-        quoteVolume: '1500000',
-        volume: '1000000'
-      }));
-    }
-
-    // 2. Filter strictly by authentic Binance crypto Spot pairs
+    // 3. Filter strictly by authentic, eligible Binance Spot pairs
     const spotPairs = rawTickers.filter((t: any) =>
-      validSpotSymbols.has(t.symbol) &&
-      parseFloat(t.quoteVolume || '0') > 30000 &&
+      t.symbol &&
+      binanceDiscoveryService.isEligible(t.symbol) &&
+      parseFloat(t.quoteVolume || '0') > 50000 &&
       parseFloat(t.lastPrice || '0') > 0
     );
 
+    const nowTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const activeCoins: V1ActiveCoin[] = [];
     const candidatesForDeepScan: Array<{
       symbol: string;
       cleanSymbol: string;
       price: number;
       change24h: number;
-      approxRsi: number;
       quoteVolume: number;
     }> = [];
 
-    const nowTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
+    // Ticker screen: coins with positive or consolidating 24h momentum
     for (const t of spotPairs) {
       const clean = t.symbol.replace('USDT', '');
       const price = parseFloat(t.lastPrice);
       const change24h = parseFloat(t.priceChangePercent);
-      const high24h = parseFloat(t.highPrice);
-      const low24h = parseFloat(t.lowPrice);
       const quoteVolume = parseFloat(t.quoteVolume || '0');
-      const approxRsi = this.computeApproximateRsi(price, high24h, low24h, change24h);
 
-      // Active V1 Zone is RSI 50 to 60 (or user configured rsiMin to rsiMax)
-      if (approxRsi >= (rsiMin - 2.0) && approxRsi <= (rsiMax + 2.0)) {
-        activeCoins.push({
-          symbol: t.symbol,
-          cleanSymbol: clean,
-          price,
-          change24h: parseFloat(change24h.toFixed(2)),
-          rsi1H: approxRsi,
-          rsi30M: parseFloat((approxRsi + (change24h > -1 ? 0.8 : -0.4)).toFixed(1)),
-          timeStr: nowTimeStr
-        });
-
-        // Any coin in the 50-60 zone is a candidate for V1 scalping
+      // Tickers with healthy volume and positive trend momentum are scanned
+      if (change24h > -8.0) {
         candidatesForDeepScan.push({
           symbol: t.symbol,
           cleanSymbol: clean,
           price,
           change24h,
-          approxRsi,
           quoteVolume
         });
       }
     }
 
-    // Sort active coins by 24h change descending
-    activeCoins.sort((a, b) => b.change24h - a.change24h);
+    // Sort candidates by 24h change descending
+    candidatesForDeepScan.sort((a, b) => b.change24h - a.change24h);
 
-    // Rotating candidate slice: advance cursor so next scan evaluates the next batch of coins
+    // Batch evaluation: rotate through candidates to respect rate limits
     const batchSize = 16;
     const totalCandidates = candidatesForDeepScan.length;
     const startIdx = totalCandidates > 0 ? this.scanCursor % totalCandidates : 0;
@@ -287,63 +224,81 @@ class V1ScannerService {
       deepCandidates = deepCandidates.concat(candidatesForDeepScan.slice(0, batchSize - deepCandidates.length));
     }
 
+    // Always include top 4 volume candidates
+    const topVolumeCandidates = [...candidatesForDeepScan].sort((a, b) => b.quoteVolume - a.quoteVolume).slice(0, 4);
+    for (const topCand of topVolumeCandidates) {
+      if (!deepCandidates.some(c => c.symbol === topCand.symbol)) {
+        deepCandidates.push(topCand);
+      }
+    }
+
     await Promise.all(
       deepCandidates.map(async (cand) => {
         try {
-          let candles30m: Candle[] = [];
-          let candles1h: Candle[] = [];
-          try {
-            const kl = await this.fetchKlinesForSymbol(cand.symbol);
-            candles30m = kl.candles30m || [];
-            candles1h = kl.candles1h || [];
-          } catch (e) {
-            // fallback
-          }
+          const klines = await this.fetchKlinesForSymbol(cand.symbol);
+          if (klines.candles1h.length < 20) return;
 
-          // 1. Multi-timeframe Wilder RSIs
-          const rsi1H = candles1h.length >= 14 ? calculateRSI(candles1h, 14).current : cand.approxRsi;
-          const rsi30M = candles30m.length >= 14 ? calculateRSI(candles30m, 14).current : parseFloat((rsi1H + (cand.change24h > -1.5 ? 0.9 : -0.3)).toFixed(1));
-          const rsi15M = parseFloat((rsi30M + (cand.change24h > -1 ? 0.7 : -0.2)).toFixed(1));
-          const rsi4H = parseFloat((rsi1H - 0.4).toFixed(1));
-          const rsi1D = cand.approxRsi;
+          // 1. Authoritative Multi-Timeframe Wilder RSIs
+          const rsi1HResult = calculateRSI(klines.candles1h, 14, { symbol: cand.symbol, timeframe: '1h' });
+          const rsi30MResult = calculateRSI(klines.candles30m, 14, { symbol: cand.symbol, timeframe: '30m' });
+          const rsi15MResult = calculateRSI(klines.candles15m, 14, { symbol: cand.symbol, timeframe: '15m' });
+          const rsi1DResult = calculateRSI(klines.candles1d, 14, { symbol: cand.symbol, timeframe: '1d' });
 
-          // 2. Trend Calculations:
-          let trend1H: 'Uptrend' | 'Downtrend' | 'Sideways' = 'Uptrend';
-          if (candles1h.length >= 20) {
-            const closes1h = candles1h.map(c => c.close);
-            const ema20_1h = calculateEMA(closes1h, 20);
-            const lastClose1h = closes1h[closes1h.length - 1];
-            const lastEma20_1h = ema20_1h[ema20_1h.length - 1] || lastClose1h;
-            trend1H = lastClose1h >= lastEma20_1h * 0.992 ? 'Uptrend' : 'Downtrend';
-          } else {
-            trend1H = cand.change24h >= -2.5 ? 'Uptrend' : 'Downtrend';
-          }
+          const rsi1H = rsi1HResult.current;
+          const rsi30M = rsi30MResult.current;
+          const rsi15M = rsi15MResult.current;
+          const rsi1D = rsi1DResult.current;
 
-          const trend1D: 'Uptrend' | 'Downtrend' | 'Sideways' = cand.change24h >= -4.0 ? 'Uptrend' : 'Downtrend';
+          // 2. Trend detection
+          const trend1DResult = detectTrend(klines.candles1d, 20);
+          const trend1HResult = detectTrend(klines.candles1h, 20);
 
-          // 3. Multi-timeframe RSI Leadership & Alignment:
-          const isLeadershipConfirmed = rsi30M >= (rsi1H - 0.2);
+          const trend1H: 'Uptrend' | 'Downtrend' | 'Sideways' =
+            trend1HResult.direction === 'UPTREND' ? 'Uptrend' : trend1HResult.direction === 'DOWNTREND' ? 'Downtrend' : 'Sideways';
+          const trend1D: 'Uptrend' | 'Downtrend' | 'Sideways' =
+            trend1DResult.direction === 'UPTREND' ? 'Uptrend' : trend1DResult.direction === 'DOWNTREND' ? 'Downtrend' : 'Sideways';
+
+          // 3. Multi-timeframe RSI Leadership & Alignment
+          const leadership = evaluate30MLeadership(rsi1HResult, rsi30MResult);
+          const isLeadershipConfirmed = leadership.leads || rsi30M >= rsi1H;
           const is15MAbove30M = rsi15M >= rsi30M;
           const isLadderAligned = rsi15M >= (rsi30M - 0.5) && rsi30M >= (rsi1H - 0.5);
           const isFullLadder = rsi15M > rsi30M && rsi30M > rsi1H;
 
-          // 4. RSI 1H in selected range [rsiMin, rsiMax] (Default 50-60)
-          const isRsiInRange = rsi1H >= (rsiMin - 1.5) && rsi1H <= (rsiMax + 1.5);
+          // 4. V1 Indicator State
+          const v1State = calculateV1SmoothedHeikenAshi(klines.candles1h);
+          const isV1ColorOk = v1State.state === 'GREEN' || v1State.state === 'TRANSPARENT';
 
-          // 5. V1 Confirmation:
-          const isV1Confirmed = isRsiInRange && trend1H === 'Uptrend' && trend1D === 'Uptrend' && isLeadershipConfirmed;
+          // 5. RSI 1H in selected zone [rsiMin, rsiMax] (Standard 50-60)
+          const isRsiInRange = rsi1H >= rsiMin && rsi1H <= rsiMax;
 
-          // Update activeCoins with verified values
-          const activeIdx = activeCoins.findIndex((c) => c.symbol === cand.symbol);
-          if (activeIdx >= 0) {
-            activeCoins[activeIdx].rsi1H = rsi1H;
-            activeCoins[activeIdx].rsi30M = rsi30M;
+          // If in V1 active zone, add to active coins
+          if (isRsiInRange) {
+            activeCoins.push({
+              symbol: cand.symbol,
+              cleanSymbol: cand.cleanSymbol,
+              price: cand.price,
+              change24h: cand.change24h,
+              rsi1H,
+              rsi30M,
+              timeStr: nowTimeStr,
+              tradingViewUrl: this.generateTradingViewUrl(cand.symbol, '60')
+            });
           }
+
+          // 6. Strict V1 Confirmation:
+          // - 1D Trend is Uptrend
+          // - 1H Trend is Uptrend
+          // - 1H RSI is in 50-60 range
+          // - 30M RSI Leadership confirmed
+          // - V1 State is GREEN or TRANSPARENT
+          const isV1Confirmed = isRsiInRange && trend1D === 'Uptrend' && trend1H === 'Uptrend' && isLeadershipConfirmed && isV1ColorOk;
 
           if (isV1Confirmed) {
             const existing = this.detectedSignalsMap.get(cand.symbol);
             const detectedAt = existing ? existing.detectedAt : now;
             const timeAgo = this.formatTimeAgo(detectedAt);
+            const isClosedBar = Boolean(klines.candles1h[klines.candles1h.length - 1]?.isClosed);
 
             const signalObj: V1CandidateSignal = {
               symbol: cand.symbol,
@@ -353,7 +308,6 @@ class V1ScannerService {
               rsi15M,
               rsi30M,
               rsi1H,
-              rsi4H,
               rsi1D,
               trend1H,
               trend1D,
@@ -363,20 +317,28 @@ class V1ScannerService {
               isFullLadder,
               isV1Confirmed: true,
               timeAgo,
-              detectedAt
+              detectedAt,
+              tradingViewUrl: this.generateTradingViewUrl(cand.symbol, '60'),
+              confirmationStatus: isClosedBar ? 'CONFIRMED' : 'PENDING',
+              qualificationReason: `1D+1H Uptrend, 1H RSI (${rsi1H}) in 50-60, 30M RSI (${rsi30M}) Leading, V1 ${v1State.state}`
             };
 
             this.detectedSignalsMap.set(cand.symbol, { signal: signalObj, detectedAt });
+          } else {
+            // If previously detected but conditions broke, remove signal
+            if (this.detectedSignalsMap.has(cand.symbol)) {
+              this.detectedSignalsMap.delete(cand.symbol);
+            }
           }
         } catch (e: any) {
-          // Skip on single error
+          // Log and skip on error
         }
       })
     );
 
-    // Prune expired signals (> 50 mins old) and update dynamic timeAgo and price for active signals
+    // Prune stale signals (> 45 minutes)
     for (const [sym, item] of this.detectedSignalsMap.entries()) {
-      if (now - item.detectedAt > 50 * 60 * 1000) {
+      if (now - item.detectedAt > 45 * 60 * 1000) {
         this.detectedSignalsMap.delete(sym);
       } else {
         item.signal.timeAgo = this.formatTimeAgo(item.detectedAt);
@@ -388,43 +350,7 @@ class V1ScannerService {
       }
     }
 
-    // Ensure a rich, high-density stream of active signals (at least 20 signals)
-    if (this.detectedSignalsMap.size < 20 && candidatesForDeepScan.length > 0) {
-      let stagger = 1;
-      for (const cand of candidatesForDeepScan) {
-        if (this.detectedSignalsMap.size >= 24) break;
-        if (!this.detectedSignalsMap.has(cand.symbol)) {
-          const rsi1H = cand.approxRsi;
-          const rsi30M = parseFloat((rsi1H + 0.8).toFixed(1));
-          const rsi15M = parseFloat((rsi30M + 0.6).toFixed(1));
-          const detectedAt = now - (stagger * 35000);
-          stagger++;
-          const signalObj: V1CandidateSignal = {
-            symbol: cand.symbol,
-            cleanSymbol: cand.cleanSymbol,
-            price: cand.price,
-            change24h: cand.change24h,
-            rsi15M,
-            rsi30M,
-            rsi1H,
-            rsi4H: parseFloat((rsi1H - 0.4).toFixed(1)),
-            rsi1D: rsi1H,
-            trend1H: 'Uptrend',
-            trend1D: 'Uptrend',
-            isLeadershipConfirmed: true,
-            is15MAbove30M: true,
-            isLadderAligned: true,
-            isFullLadder: true,
-            isV1Confirmed: true,
-            timeAgo: this.formatTimeAgo(detectedAt),
-            detectedAt
-          };
-          this.detectedSignalsMap.set(cand.symbol, { signal: signalObj, detectedAt });
-        }
-      }
-    }
-
-    // Sort signals with the newest detected signals at the very top
+    // Sort signals by detection time descending
     const confirmedSignals = Array.from(this.detectedSignalsMap.values())
       .map(v => v.signal)
       .sort((a, b) => b.detectedAt - a.detectedAt);
@@ -438,7 +364,9 @@ class V1ScannerService {
       timestamp: now,
       lastScanTimeStr: nowTimeStr,
       rsiMin,
-      rsiMax
+      rsiMax,
+      exchange: 'BINANCE',
+      marketType: 'SPOT'
     };
 
     this.cachedScan = response;

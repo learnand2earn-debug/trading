@@ -133,21 +133,23 @@ async function startAutomatedScannerLoop() {
     executionEngine.updateMarketPrice(symbol, candle.close);
   });
 
-  // Pre-seed initial candle history with paced requests
+  // Pre-seed initial candle history with 500 authoritative candles per timeframe
   for (const sym of symbols) {
     try {
-      const k1h = await binanceService.fetchKlines(sym, '1h', 50);
-      const k1d = await binanceService.fetchKlines(sym, '1d', 30);
-      const k30m = await binanceService.fetchKlines(sym, '30m', 50);
-      const k15m = await binanceService.fetchKlines(sym, '15m', 50);
+      const [k1h, k1d, k30m, k15m] = await Promise.all([
+        binanceService.fetchKlines(sym, '1h', 500),
+        binanceService.fetchKlines(sym, '1d', 500),
+        binanceService.fetchKlines(sym, '30m', 500),
+        binanceService.fetchKlines(sym, '15m', 500)
+      ]);
 
-      k1h.forEach(c => candleStore.updateCandle(sym, '1h', c));
-      k1d.forEach(c => candleStore.updateCandle(sym, '1d', c));
-      k30m.forEach(c => candleStore.updateCandle(sym, '30m', c));
-      k15m.forEach(c => candleStore.updateCandle(sym, '15m', c));
+      candleStore.setCandles(sym, '1h', k1h);
+      candleStore.setCandles(sym, '1d', k1d);
+      candleStore.setCandles(sym, '30m', k30m);
+      candleStore.setCandles(sym, '15m', k15m);
 
       // Small pacing pause to respect rate limits
-      await new Promise(r => setTimeout(r, 60));
+      await new Promise(r => setTimeout(r, 40));
     } catch (e: any) {
       console.warn(`[Scanner] Initial seed error for ${sym}:`, e.message);
     }

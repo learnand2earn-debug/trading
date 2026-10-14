@@ -52,7 +52,7 @@ export function evaluateV1Method(
   });
 
   // Condition 3: RSI 1H in 50-60 zone & crossing above 50/54
-  const rsi1H = calculateRSI(candles1H, 14);
+  const rsi1H = calculateRSI(candles1H, 14, { symbol, timeframe: '1h' });
   const rsiInZone = rsi1H.current >= 50 && rsi1H.current <= 60;
   const rsiCrossed = isRSICrossingAbove(rsi1H.previous, rsi1H.current, config.rsiCrossLevel);
   const rsiAbove = rsi1H.current >= config.rsiCrossLevel;
@@ -79,7 +79,7 @@ export function evaluateV1Method(
   });
 
   // Condition 5: 30M RSI Leadership (30M RSI > 1H RSI)
-  const rsi30M = calculateRSI(candles30M, 14);
+  const rsi30M = calculateRSI(candles30M, 14, { symbol, timeframe: '30m' });
   const leadership = evaluate30MLeadership(rsi1H, rsi30M);
   const isStrictlyAbove = rsi30M.current > rsi1H.current;
   const leadershipPassed = leadership.leads || isStrictlyAbove;

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, CheckCircle2, DollarSign, Layers, Radio, RefreshCw, XCircle, Zap, TrendingUp, ShieldCheck, ChevronRight } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, DollarSign, Layers, Radio, RefreshCw, XCircle, Zap, TrendingUp, ShieldCheck, ChevronRight, ExternalLink, Activity } from 'lucide-react';
 import { api, CoinDetailData } from '../services/api.js';
 import { CandleChart } from '../components/CandleChart.js';
 
@@ -57,6 +57,8 @@ export const CoinDetail: React.FC<{ symbol: string; navigate: (page: string) => 
 
   const candlesForTf = data.candles[selectedTf] || [];
   const targetPrice = data.lastPrice * 1.01; // +1% Target
+  const tvInterval = selectedTf === '15m' ? '15' : selectedTf === '30m' ? '30' : selectedTf === '1h' ? '60' : 'D';
+  const tradingViewUrl = `https://www.tradingview.com/chart/?symbol=BINANCE%3A${data.symbol}&interval=${tvInterval}`;
 
   return (
     <div className="space-y-4 font-mono">
@@ -73,15 +75,18 @@ export const CoinDetail: React.FC<{ symbol: string; navigate: (page: string) => 
           <div>
             <h1 className="text-xl font-extrabold text-white flex items-center gap-2.5 font-display">
               <span>{data.symbol}</span>
+              <span className="text-[11px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30 font-bold">
+                BINANCE SPOT
+              </span>
               <span className="text-base font-bold text-emerald-400 tabular-nums">
                 ${data.lastPrice > 10 ? data.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : data.lastPrice.toFixed(4)}
               </span>
               <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-bold font-mono">
-                +1% TP TARGET READY
+                +1% TP READY
               </span>
             </h1>
             <div className="text-[10px] text-gray-400 mt-0.5">
-              Binance Spot Liquidity Stream • 7 Deterministic Strategies Algorithmic Breakdown
+              Verified Binance Spot Stream • TradingView-Matched Wilder's RMA RSI • 7 Deterministic Strategies
             </div>
           </div>
         </div>
@@ -103,6 +108,17 @@ export const CoinDetail: React.FC<{ symbol: string; navigate: (page: string) => 
               </button>
             ))}
           </div>
+
+          <a
+            href={tradingViewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-1.5 rounded-lg bg-blue-950/40 border border-blue-500/40 text-blue-400 hover:text-white hover:bg-blue-600/30 transition flex items-center gap-1.5 text-xs font-bold shadow-sm"
+            title={`Open BINANCE:${data.symbol} on TradingView (${selectedTf.toUpperCase()})`}
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>TV {selectedTf.toUpperCase()}</span>
+          </a>
 
           <button
             onClick={loadCoin}
@@ -153,6 +169,7 @@ export const CoinDetail: React.FC<{ symbol: string; navigate: (page: string) => 
               </div>
             </div>
           </div>
+
 
           {/* Instant Paper Desk Execution Widget */}
           <div className="bg-[#0c1017] border border-emerald-500/30 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">

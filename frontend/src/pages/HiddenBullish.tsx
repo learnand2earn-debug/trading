@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api, HiddenCandidateSignal, HiddenActiveCoin } from '../services/api.js';
-import { HIDDEN_BULL_COINS } from '../data/marketCoins.js';
 
 // Open TradingView chart directly in browser tab for coin and timeframe
 const openDirectTradingView = (symbol: string, tf: string = '1H') => {
@@ -61,25 +60,6 @@ const getLocalTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
   );
 };
 
-const generateFallbackHBSignals = (): HiddenCandidateSignal[] => {
-  return HIDDEN_BULL_COINS.slice(0, 18).map(c => ({
-    symbol: c.symbol.endsWith('USDT') ? c.symbol : `${c.symbol}USDT`,
-    cleanSymbol: c.symbol.replace('USDT', ''),
-    price: 1.25,
-    change24h: c.change24h,
-    rsi15M: parseFloat((c.rsi1H + 1.1).toFixed(1)),
-    rsi30M: parseFloat((c.rsi1H + 0.8).toFixed(1)),
-    rsi1H: c.rsi1H,
-    prevRsi1H: c.rsi1H,
-    rsi1D: c.rsi1H,
-    isConsolidating: true,
-    is30MLeading: true,
-    isHBConfirmed: true,
-    timeAgo: 'Just now',
-    detectedAt: Date.now()
-  }));
-};
-
 export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [isScanInProgress, setIsScanInProgress] = useState(false);
@@ -107,14 +87,11 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
       .then(data => {
         if (data && data.success) {
           setActiveCoins(data.activeCoins || []);
-          let sigs = data.signals || [];
-          if (sigs.length === 0) {
-            sigs = generateFallbackHBSignals();
-          }
+          const sigs = data.signals || [];
           setSignals(sigs);
           if (data.lastScanTimeStr) setLastScanTime(data.lastScanTimeStr);
           const initialLogs: { time: string; msg: string }[] = [
-            { time: timeStr, msg: `Hidden Bullish ready - ${sigs.length} candidate signals loaded` }
+            { time: timeStr, msg: `Hidden Bullish ready - ${sigs.length} candidate signals loaded from Binance Spot` }
           ];
           sigs.slice(0, 8).forEach(s => {
             initialLogs.push({ time: timeStr, msg: `${s.symbol} - 1H Consolidation + 30M Lead (RSI 1H: ${s.rsi1H})` });
@@ -122,11 +99,11 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
           setLogs(initialLogs);
         } else {
           setActiveCoins([]);
-          setSignals(generateFallbackHBSignals());
+          setSignals([]);
         }
       })
       .catch(() => {
-        setSignals(generateFallbackHBSignals());
+        setSignals([]);
       });
   }, [rsiMin, rsiMax]);
 
@@ -145,10 +122,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
       setStatusLabel('Evaluating 1H Consolidation (Na Up Na Down) & 30M Leadership...');
 
       if (data && data.success) {
-        let confirmedSigs = data.signals || [];
-        if (confirmedSigs.length === 0) {
-          confirmedSigs = generateFallbackHBSignals();
-        }
+        const confirmedSigs = data.signals || [];
         const activeList = data.activeCoins || [];
 
         setProgressWidth('100%');
@@ -183,12 +157,12 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
 
         setTimeout(() => setProgressWidth('0%'), 1000);
       } else {
-        setSignals(generateFallbackHBSignals());
+        setSignals([]);
       }
     } catch (e) {
       setProgressWidth('0%');
       setStatusLabel('Active · Monitoring Hidden Bullish pairs');
-      setSignals(generateFallbackHBSignals());
+      setSignals([]);
     } finally {
       setIsScanInProgress(false);
     }

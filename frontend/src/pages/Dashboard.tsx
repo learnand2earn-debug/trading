@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import {
-  GAINERS_COINS,
-  V1_ZONE_COINS,
-  NEUTRAL_COINS,
-  HIDDEN_BULL_COINS,
-  OVERSOLD_COINS,
-  EXTREME_COINS,
-  HeatmapCoin
-} from '../data/marketCoins.js';
 import { TradingViewModal } from '../components/TradingViewModal.js';
 import { api, LiveOverviewResponse } from '../services/api.js';
+
+export interface HeatmapCoin {
+  symbol: string;
+  rsi1H: number;
+  rsiTf?: number;
+  timeframe?: string;
+  change24h: number;
+  hasWarning?: boolean;
+  isAccentGreen?: boolean;
+}
 
 interface DashboardProps {
   navigate: (page: string) => void;
@@ -52,27 +53,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [timeframe, setTimeframe] = useState<string>(() => localStorage.getItem('tv_timeframe') || '1H');
   const [saveStatus, setSaveStatus] = useState<string>('');
 
-  // Coin lists (stateful so they update calmly every 30s)
-  const [gainers, setGainers] = useState<HeatmapCoin[]>(GAINERS_COINS);
-  const [v1Coins, setV1Coins] = useState<HeatmapCoin[]>(V1_ZONE_COINS);
-  const [neutral, setNeutral] = useState<HeatmapCoin[]>(NEUTRAL_COINS);
-  const [hiddenBull, setHiddenBull] = useState<HeatmapCoin[]>(HIDDEN_BULL_COINS);
-  const [oversold, setOversold] = useState<HeatmapCoin[]>(OVERSOLD_COINS);
-  const [extreme, setExtreme] = useState<HeatmapCoin[]>(EXTREME_COINS);
+  // Coin lists (live from Binance Spot)
+  const [gainers, setGainers] = useState<HeatmapCoin[]>([]);
+  const [v1Coins, setV1Coins] = useState<HeatmapCoin[]>([]);
+  const [neutral, setNeutral] = useState<HeatmapCoin[]>([]);
+  const [hiddenBull, setHiddenBull] = useState<HeatmapCoin[]>([]);
+  const [oversold, setOversold] = useState<HeatmapCoin[]>([]);
+  const [extreme, setExtreme] = useState<HeatmapCoin[]>([]);
 
   // Dynamic Top 10 Binance Movers (Real-time Binance Crypto Spot pairs only)
-  const [topMovers, setTopMovers] = useState<Array<{ symbol: string; change24h: number; price?: number }>>([
-    { symbol: 'CREAM', change24h: 65.35 },
-    { symbol: 'PNT', change24h: 45.23 },
-    { symbol: 'GTC', change24h: 35.76 },
-    { symbol: 'OSMO', change24h: 30.71 },
-    { symbol: 'RSR', change24h: 22.32 },
-    { symbol: 'KDA', change24h: 17.65 },
-    { symbol: 'SKL', change24h: 17.47 },
-    { symbol: 'SOXSB', change24h: 16.96 },
-    { symbol: 'CLV', change24h: 13.97 },
-    { symbol: 'MDX', change24h: 13.52 }
-  ]);
+  const [topMovers, setTopMovers] = useState<Array<{ symbol: string; change24h: number; price?: number }>>([]);
 
   // Dynamic Overall Market Sentiment & Breadth
   const [marketSentiment, setMarketSentiment] = useState<{
@@ -80,15 +70,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
     breadthText: string;
     isBullish: boolean;
   }>({
-    direction: '↗ BULLISH',
-    breadthText: '84% rising · 16% falling (24h)',
+    direction: '→ MONITORING',
+    breadthText: 'Connecting to Binance Spot feed...',
     isBullish: true
   });
 
   // Dynamic candidate for RSI 52-55
   const [risingCandidate, setRisingCandidate] = useState<{ symbol: string; rsi: number }>({
-    symbol: 'ETC',
-    rsi: 52.8
+    symbol: 'BTC',
+    rsi: 54.0
   });
   const [isUpdatingFlash, setIsUpdatingFlash] = useState<boolean>(false);
 
@@ -155,7 +145,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             }
           };
         } catch (binanceErr) {
-          console.warn('[Dashboard] Using realistic market live drift fallback');
+          console.warn('[Dashboard] Direct Binance fetch warning');
         }
       }
 
@@ -184,71 +174,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
 
       // 3. Update all 6 coin lists with actual real Binance coins and accurate RSI
-      const hasFullZones = overview?.zones && (
-        (overview.zones.gainers?.length || 0) > 10 ||
-        (overview.zones.v1?.length || 0) > 10
-      );
+      if (overview?.zones) {
+        setGainers(overview.zones.gainers || []);
+        setV1Coins(overview.zones.v1 || []);
+        setNeutral(overview.zones.neutral || []);
+        setHiddenBull(overview.zones.hiddenBull || []);
+        setOversold(overview.zones.oversold || []);
+        setExtreme(overview.zones.extreme || []);
 
-      if (hasFullZones && overview?.zones) {
-        setGainers(overview.zones.gainers);
-        setV1Coins(overview.zones.v1);
-        setNeutral(overview.zones.neutral);
-        setHiddenBull(overview.zones.hiddenBull);
-        setOversold(overview.zones.oversold);
-        setExtreme(overview.zones.extreme);
-
-        const v1List = overview.zones.v1;
+        const v1List = overview.zones.v1 || [];
         const cand = v1List.find(c => (c.rsiTf ?? c.rsi1H) >= 52.0 && (c.rsiTf ?? c.rsi1H) <= 55.0) || v1List[0];
         if (cand) {
           setRisingCandidate({ symbol: cand.symbol, rsi: cand.rsiTf ?? cand.rsi1H });
         }
-      } else {
-        const tickers = overview?.tickers || {};
-
-        const updateListWithLive = (list: HeatmapCoin[], minRsi: number, maxRsi: number): HeatmapCoin[] => {
-          return list.map(coin => {
-            const live = tickers[coin.symbol] || tickers[`${coin.symbol}USDT`];
-            const baseChg = live ? live.change24h : coin.change24h;
-            const newChg = Number(baseChg.toFixed(2));
-            let newRsi = coin.rsi1H;
-
-            const tfOffsets: Record<string, number> = {
-              '15M': 2.8,
-              '30M': 1.6,
-              '1H': 0.0,
-              '4H': -1.4,
-              '1D': -3.2,
-              '1W': -5.0
-            };
-            const tfOffset = tfOffsets[currentTf] ?? 0;
-            const rsiWithTf = Number((newRsi + tfOffset).toFixed(1));
-
-            if (newRsi < minRsi) newRsi = Number((minRsi + 0.2).toFixed(1));
-            if (newRsi > maxRsi) newRsi = Number((maxRsi - 0.2).toFixed(1));
-
-            return {
-              ...coin,
-              change24h: newChg,
-              rsi1H: newRsi,
-              rsiTf: rsiWithTf,
-              timeframe: currentTf
-            };
-          });
-        };
-
-        setGainers(updateListWithLive(GAINERS_COINS, 60.1, 96.0));
-        setV1Coins(() => {
-          const updated = updateListWithLive(V1_ZONE_COINS, 50.0, 59.9);
-          const cand = updated.find(c => (c.rsiTf ?? c.rsi1H) >= 52.0 && (c.rsiTf ?? c.rsi1H) <= 55.0) || updated[0];
-          if (cand) {
-            setRisingCandidate({ symbol: cand.symbol, rsi: cand.rsiTf ?? cand.rsi1H });
-          }
-          return updated;
-        });
-        setNeutral(updateListWithLive(NEUTRAL_COINS, 40.0, 49.9));
-        setHiddenBull(updateListWithLive(HIDDEN_BULL_COINS, 30.0, 39.9));
-        setOversold(updateListWithLive(OVERSOLD_COINS, 20.0, 29.9));
-        setExtreme(updateListWithLive(EXTREME_COINS, 10.0, 19.9));
       }
     } catch (e) {
       console.error('[Dashboard] Market update cycle failed:', e);
@@ -311,10 +249,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       >
         <span className="coin-sym">
           {coin.symbol}
-          {isWarning && <span style={{ color: '#F0C040' }}>⚠️</span>}
+          {isWarning && <span style={{ marginLeft: '4px', fontSize: '11px' }}>⚠️</span>}
         </span>
         <span className="coin-metrics">
-          <span className="coin-rsi">{timeframe} RSI: {effectiveRsi.toFixed(1)}</span>
+          <span className="coin-rsi">RSI: {effectiveRsi.toFixed(1)}</span>
           <span className={`coin-chg ${chgClass}`}>
             {chgSign}{coin.change24h.toFixed(1)}%
           </span>
@@ -382,6 +320,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   }}
                 >
                   LIVE
+                </span>
+
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '2px 7px',
+                    background: '#161b22',
+                    border: '1px solid #30363d',
+                    color: '#58a6ff',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em'
+                  }}
+                  title="Current Active Timeframe for Heatmap RSI"
+                >
+                  {timeframe}
                 </span>
 
                 <span style={{ fontSize: '12px', color: '#8b949e', fontWeight: 500, marginLeft: '4px' }}>

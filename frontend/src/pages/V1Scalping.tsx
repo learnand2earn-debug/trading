@@ -1,30 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api, V1CandidateSignal, V1ActiveCoin } from '../services/api.js';
-import { V1_ZONE_COINS } from '../data/marketCoins.js';
-
-// Fallback signal generator ensuring signals are never 0 even if market is in deep pullback
-const generateFallbackV1Signals = (): V1CandidateSignal[] => {
-  return V1_ZONE_COINS.slice(0, 18).map(c => ({
-    symbol: c.symbol.endsWith('USDT') ? c.symbol : `${c.symbol}USDT`,
-    cleanSymbol: c.symbol.replace('USDT', ''),
-    price: 1.25,
-    change24h: c.change24h,
-    rsi15M: parseFloat((c.rsi1H + 1.2).toFixed(1)),
-    rsi30M: parseFloat((c.rsi1H + 0.8).toFixed(1)),
-    rsi1H: c.rsi1H,
-    rsi4H: parseFloat((c.rsi1H - 0.4).toFixed(1)),
-    rsi1D: c.rsi1H,
-    trend1H: 'Uptrend',
-    trend1D: 'Uptrend',
-    isLeadershipConfirmed: true,
-    is15MAbove30M: true,
-    isLadderAligned: true,
-    isFullLadder: true,
-    isV1Confirmed: true,
-    timeAgo: 'Just now',
-    detectedAt: Date.now()
-  }));
-};
 
 // Open TradingView chart directly in browser tab for coin and timeframe
 const openDirectTradingView = (symbol: string, tf: string = '1H') => {
@@ -112,29 +87,24 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
     api.getV1Scanner({ rsiMin, rsiMax, fresh: false })
       .then(data => {
         if (data && data.success) {
-          let sigs = data.signals || [];
-          if (sigs.length === 0) {
-            sigs = generateFallbackV1Signals();
-          }
+          const sigs = data.signals || [];
           setActiveCoins(data.activeCoins || []);
           setSignals(sigs);
           setLastScanTime(data.lastScanTimeStr || timeStr);
 
           const initialLogs: { time: string; msg: string }[] = [
-            { time: timeStr, msg: `V1 ready - ${sigs.length} candidate signals loaded` }
+            { time: timeStr, msg: `V1 ready - ${sigs.length} candidate signals loaded from Binance Spot` }
           ];
           sigs.slice(0, 8).forEach(s => {
             initialLogs.push({ time: timeStr, msg: `${s.symbol} - V1 Scalping Setup (RSI 1H: ${s.rsi1H})` });
           });
           setLogs(initialLogs);
         } else {
-          const fallback = generateFallbackV1Signals();
-          setSignals(fallback);
+          setSignals([]);
         }
       })
       .catch(() => {
-        const fallback = generateFallbackV1Signals();
-        setSignals(fallback);
+        setSignals([]);
       });
   }, []);
 
@@ -146,10 +116,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
     try {
       const data = await api.getV1Scanner({ rsiMin, rsiMax, fresh: true });
       if (data && data.success) {
-        let newSignals = data.signals || [];
-        if (newSignals.length === 0) {
-          newSignals = generateFallbackV1Signals();
-        }
+        const newSignals = data.signals || [];
 
         setSignals(prevSignals => {
           const prevMap = new Map(prevSignals.map(s => [s.symbol, s]));
@@ -164,7 +131,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
             setLogs(prev => [...freshLogs, ...prev.slice(0, 35)]);
           } else {
             setLogs(prev => [
-              { time: timeStr, msg: `V1 scan complete - ${newSignals.length} active setups monitored` },
+              { time: timeStr, msg: `V1 scan complete - ${newSignals.length} active setups verified on Binance` },
               ...prev.slice(0, 35)
             ]);
           }
@@ -175,12 +142,10 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
         setActiveCoins(data.activeCoins || []);
         setLastScanTime(data.lastScanTimeStr || timeStr);
       } else {
-        const fallback = generateFallbackV1Signals();
-        setSignals(fallback);
+        setSignals([]);
       }
     } catch (e) {
-      const fallback = generateFallbackV1Signals();
-      setSignals(fallback);
+      setSignals([]);
     } finally {
       setIsScanInProgress(false);
     }
@@ -558,7 +523,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
                           transition: 'all 0.15s ease'
                         }}
                       >
-                        <span>{item.label}: {item.val.toFixed(1)}</span>
+                        <span>{item.label}: {item.val !== undefined ? item.val.toFixed(1) : '--'}</span>
                         <span style={{ fontSize: '9px', opacity: 0.7 }}>↗</span>
                       </span>
                     ))}

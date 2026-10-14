@@ -1,6 +1,7 @@
 import { Candle } from '../indicators/types.js';
 import { calculateRSI, evaluate30MLeadership, isRSIInZone, isRSIConsolidating } from '../indicators/rsi.js';
 import { evaluateSourceHiddenBullish } from '../indicators/candlePatterns.js';
+import { detectHiddenBullishDivergence } from '../indicators/divergence.js';
 import { StrategyConditionCheck, StrategySignalResult } from './types.js';
 
 export interface HiddenBullishConfig {
@@ -31,8 +32,8 @@ export function evaluateHiddenBullish(
   const conditions: StrategyConditionCheck[] = [];
   const currentPrice = candles1H.length > 0 ? candles1H[candles1H.length - 1].close : 0;
 
-  // Condition 1: 1H RSI in Buying Zone 30-40
-  const rsi1H = calculateRSI(candles1H, 14);
+  // Condition 1: 1H RSI in Buying Zone 30-40 (Calculated via authoritative Wilder RSI)
+  const rsi1H = calculateRSI(candles1H, 14, { symbol, timeframe: '1h' });
   const rsiInZone = isRSIInZone(rsi1H.current, config.rsiMin, config.rsiMax);
   conditions.push({
     name: `1H RSI Zone [${config.rsiMin}, ${config.rsiMax}]`,
@@ -44,7 +45,7 @@ export function evaluateHiddenBullish(
   });
 
   // Condition 2: 1H RSI Consolidation (na up ho na down ho - flat / range consolidation)
-  const isConsolidating = isRSIConsolidating(rsi1H, 2.2);
+  const isConsolidating = isRSIConsolidating(rsi1H, 2.8);
   conditions.push({
     name: '1H RSI Consolidation (Flat / Range)',
     category: 'SOURCE_RULE',
@@ -55,7 +56,7 @@ export function evaluateHiddenBullish(
   });
 
   // Condition 3: 30M RSI Leadership (30M RSI strictly above 1H RSI)
-  const rsi30M = calculateRSI(candles30M, 14);
+  const rsi30M = calculateRSI(candles30M, 14, { symbol, timeframe: '30m' });
   const leadership = evaluate30MLeadership(rsi1H, rsi30M);
   const isAbove = rsi30M.current > rsi1H.current;
   const leadPassed = isAbove || leadership.leads;
@@ -68,21 +69,33 @@ export function evaluateHiddenBullish(
     reason: leadPassed ? `30M RSI (${rsi30M.current}) is above 1H RSI (${rsi1H.current})` : `30M RSI does not lead 1H RSI`
   });
 
-  // Condition 4: ~10 candles downward drop & reaction structure
+  // Condition 4: Hidden Bullish Divergence / ~10 candles downward drop & reaction structure
+  const divergence = detectHiddenBullishDivergence(candles1H);
   const patternResult = evaluateSourceHiddenBullish(
     candles1H,
     config.lookbackCandles,
     config.minDownwardPct,
     config.minReactionPct
   );
-  const structurePassed = patternResult.matched || patternResult.reactionPct >= 0.1 || isConsolidating;
+
+  const structurePassed = divergence.detected || patternResult.matched || patternResult.reactionPct >= 0.1 || isConsolidating;
+  const structureReason = divergence.detected
+    ? divergence.reason
+    : patternResult.matched
+    ? patternResult.reason
+    : isConsolidating
+    ? 'Consolidation & support bounce identified'
+    : 'Insufficient reaction';
+
   conditions.push({
-    name: '10-Candle Drop & Support Reaction Structure',
+    name: 'Hidden Bullish Divergence / ~10-Candle Structure Reaction',
     category: 'SOURCE_RULE',
     passed: structurePassed,
-    actualValue: `Drop: -${patternResult.downwardPct}%, Reaction: +${patternResult.reactionPct}%`,
-    requiredCondition: `Structure dip with reaction or consolidation`,
-    reason: structurePassed ? 'Structure consolidation & bounce identified' : 'Insufficient reaction'
+    actualValue: divergence.detected
+      ? `Divergence: P1 Low ${divergence.priceLow1} (RSI ${divergence.rsiLow1}) -> P2 Low ${divergence.priceLow2} (RSI ${divergence.rsiLow2})`
+      : `Drop: -${patternResult.downwardPct}%, Reaction: +${patternResult.reactionPct}%`,
+    requiredCondition: 'Higher low in price with lower low in RSI OR dip with reaction structure',
+    reason: structureReason
   });
 
   const signalValid = conditions.every(c => c.passed);
@@ -93,7 +106,7 @@ WHY THIS SIGNAL ${signalValid ? 'EXISTS' : 'IS REJECTED'}:
 1. 1H RSI Zone [${config.rsiMin}-${config.rsiMax}]: ${rsi1H.current} -> ${rsiInZone ? 'PASS' : 'FAIL'}
 2. 1H RSI Consolidation: ${isConsolidating ? 'PASS (Flat / Na up na down)' : 'FAIL'}
 3. 30M RSI Leadership: ${leadPassed ? 'PASS (30M above 1H)' : 'FAIL'} (30M: ${rsi30M.current} vs 1H: ${rsi1H.current})
-4. Structure / Reaction: ${structurePassed ? 'PASS' : 'FAIL'}
+4. Structure / Divergence: ${structurePassed ? 'PASS' : 'FAIL'} (${structureReason})
 Final Decision: ${signalValid ? 'VALID SIGNAL (+1% Target)' : 'REJECTED'}
   `.trim();
 
@@ -112,7 +125,10 @@ Final Decision: ${signalValid ? 'VALID SIGNAL (+1% Target)' : 'REJECTED'}
       downwardPct: patternResult.downwardPct,
       reactionPct: patternResult.reactionPct,
       rsi1H: rsi1H.current,
-      rsi30M: rsi30M.current
+      rsi30M: rsi30M.current,
+      divergenceDetected: divergence.detected,
+      pivot1: divergence.pivot1,
+      pivot2: divergence.pivot2
     },
     explanation,
     evaluatedAt: Date.now(),

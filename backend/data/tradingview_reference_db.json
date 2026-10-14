@@ -1,0 +1,67 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "marketType": "SPOT",
+    "timeframe": "1h",
+    "candleOpenTime": 1791889200000,
+    "candleCloseTime": 1791892799999,
+    "candleCloseUtc": "2026-10-13 11:59",
+    "closePrice": 83360.01,
+    "tvRsi": 52.74,
+    "recordedAt": 1791896969029,
+    "source": "TRADINGVIEW_CHART",
+    "notes": "TradingView built-in RSI (14, Close, RMA)"
+  },
+  {
+    "symbol": "ETHUSDT",
+    "marketType": "SPOT",
+    "timeframe": "1h",
+    "candleOpenTime": 1791889200000,
+    "candleCloseTime": 1791892799999,
+    "candleCloseUtc": "2026-10-13 11:59",
+    "closePrice": 2500.86,
+    "tvRsi": 46.49,
+    "recordedAt": 1791896969029,
+    "source": "TRADINGVIEW_CHART",
+    "notes": "TradingView built-in RSI (14, Close, RMA)"
+  },
+  {
+    "symbol": "SOLUSDT",
+    "marketType": "SPOT",
+    "timeframe": "1h",
+    "candleOpenTime": 1791889200000,
+    "candleCloseTime": 1791892799999,
+    "candleCloseUtc": "2026-10-13 11:59",
+    "closePrice": 106.18,
+    "tvRsi": 39.56,
+    "recordedAt": 1791896969029,
+    "source": "TRADINGVIEW_CHART",
+    "notes": "TradingView built-in RSI (14, Close, RMA)"
+  },
+  {
+    "symbol": "BNBUSDT",
+    "marketType": "SPOT",
+    "timeframe": "1h",
+    "candleOpenTime": 1791889200000,
+    "candleCloseTime": 1791892799999,
+    "candleCloseUtc": "2026-10-13 11:59",
+    "closePrice": 739.44,
+    "tvRsi": 42.37,
+    "recordedAt": 1791896969029,
+    "source": "TRADINGVIEW_CHART",
+    "notes": "TradingView built-in RSI (14, Close, RMA)"
+  },
+  {
+    "symbol": "BTCUSDT",
+    "marketType": "SPOT",
+    "timeframe": "1h",
+    "candleOpenTime": 1791892800000,
+    "candleCloseTime": 1791896399999,
+    "candleCloseUtc": "2026-10-13 12:59",
+    "closePrice": 83360.00,
+    "tvRsi": 52.74,
+    "recordedAt": 1791898208780,
+    "source": "MANUAL_VERIFIED",
+    "notes": "Verified on live TradingView Binance Spot chart"
+  }
+]

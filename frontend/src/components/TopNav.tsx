@@ -34,20 +34,24 @@ export const TopNav: React.FC<TopNavProps> = ({
       );
 
       // Session calculation (UTC based Asian 00:00-09:00, London 07:00-16:00, NY 13:00-22:00)
+      // With +2 min adjustment per user requirement
       const utcHours = now.getUTCHours();
       const utcMins = now.getUTCMinutes();
       if (utcHours >= 0 && utcHours < 9) {
-        const leftH = 8 - utcHours;
-        const leftM = 59 - utcMins;
+        const totalMinutesLeft = (8 - utcHours) * 60 + (59 - utcMins) + 2;
+        const leftH = Math.floor(totalMinutesLeft / 60);
+        const leftM = totalMinutesLeft % 60;
         setSessionInfo(`Asian ${leftH}h ${leftM}m left`);
       } else if (utcHours >= 7 && utcHours < 16) {
-        const leftH = 15 - utcHours;
-        const leftM = 59 - utcMins;
+        const totalMinutesLeft = (15 - utcHours) * 60 + (59 - utcMins) + 2;
+        const leftH = Math.floor(totalMinutesLeft / 60);
+        const leftM = totalMinutesLeft % 60;
         setSessionInfo(`London ${leftH}h ${leftM}m left`);
       } else {
-        const leftH = 21 - utcHours;
-        const leftM = 59 - utcMins;
-        setSessionInfo(`New York ${Math.max(0, leftH)}h ${leftM}m left`);
+        const totalMinutesLeft = (21 - utcHours) * 60 + (59 - utcMins) + 2;
+        const leftH = Math.max(0, Math.floor(totalMinutesLeft / 60));
+        const leftM = Math.max(0, totalMinutesLeft % 60);
+        setSessionInfo(`New York ${leftH}h ${leftM}m left`);
       }
     };
 
@@ -309,6 +313,7 @@ export const TopNav: React.FC<TopNavProps> = ({
             <span>🔵</span>
             <span>Hidden Bullish</span>
           </button>
+
 
           <button
             onClick={() => navigate('admin')}

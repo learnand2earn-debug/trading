@@ -10,7 +10,9 @@
     "start": "node dist/server.js",
     "test": "tsx ../tests/runner.ts",
     "test:api": "tsx ../tests/api.test.ts",
-    "test:all": "tsx ../tests/runner.ts && tsx ../tests/api.test.ts"
+    "test:binance": "tsx ../tests/binanceVerification.test.ts",
+    "test:audit": "tsx ../tests/completeAccuracyAudit.test.ts",
+    "test:all": "tsx ../tests/runner.ts && tsx ../tests/api.test.ts && tsx ../tests/binanceVerification.test.ts && tsx ../tests/completeAccuracyAudit.test.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.14",

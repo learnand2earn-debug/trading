@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import { Candle } from '../indicators/types.js';
 import { binanceGet } from './binanceClient.js';
+import { binanceDiscoveryService } from './binanceDiscovery.js';
 
 export interface BinanceTicker24h {
   symbol: string;
@@ -30,46 +31,76 @@ export class BinanceMarketDataService {
   async getTopGainers(limit: number = 7): Promise<BinanceTicker24h[]> {
     try {
       const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 8000 });
-      const usdtPairs = resp.data
-        .filter(t => t.symbol.endsWith('USDT'))
-        .map(t => ({
-          symbol: t.symbol,
-          priceChangePercent: parseFloat(t.priceChangePercent),
-          lastPrice: parseFloat(t.lastPrice),
-          volume: parseFloat(t.volume),
-          quoteVolume: parseFloat(t.quoteVolume),
-          highPrice: parseFloat(t.highPrice),
-          lowPrice: parseFloat(t.lowPrice)
-        }))
-        .sort((a, b) => b.priceChangePercent - a.priceChangePercent);
+      const rawTickers = resp.data || [];
 
+      // Ensure discovery has loaded eligible pairs
+      await binanceDiscoveryService.refreshEligibleSymbols();
+
+      const usdtPairs: BinanceTicker24h[] = [];
+
+      for (const t of rawTickers) {
+        if (!t.symbol || !binanceDiscoveryService.isEligible(t.symbol)) {
+          continue;
+        }
+
+        const quoteVol = parseFloat(t.quoteVolume || '0');
+        if (quoteVol < 10000) {
+          continue; // skip completely illiquid pairs
+        }
+
+        usdtPairs.push({
+          symbol: t.symbol,
+          priceChangePercent: parseFloat(t.priceChangePercent || '0'),
+          lastPrice: parseFloat(t.lastPrice || '0'),
+          volume: parseFloat(t.volume || '0'),
+          quoteVolume: quoteVol,
+          highPrice: parseFloat(t.highPrice || '0'),
+          lowPrice: parseFloat(t.lowPrice || '0')
+        });
+      }
+
+      usdtPairs.sort((a, b) => b.priceChangePercent - a.priceChangePercent);
       return usdtPairs.slice(0, limit);
     } catch (err: any) {
-      console.warn('[BinanceService] Failed to fetch 24hr tickers, using cached/fallback:', err.message);
-      return this.getMockTopGainers();
+      console.warn('[BinanceService] Failed to fetch 24hr tickers from Binance:', err.message);
+      // Strictly NO mock fallback - return empty array
+      return [];
     }
   }
 
-  async fetchKlines(symbol: string, interval: string, limit: number = 100): Promise<Candle[]> {
+  async fetchKlines(symbol: string, interval: string, limit: number = 500): Promise<Candle[]> {
     try {
       const resp = await binanceGet<any[]>('/api/v3/klines', {
-        params: { symbol, interval, limit },
+        params: { symbol, interval, limit: Math.max(limit, 500) },
         timeout: 8000
       });
 
-      return resp.data.map(k => ({
-        openTime: Number(k[0]),
-        open: parseFloat(k[1]),
-        high: parseFloat(k[2]),
-        low: parseFloat(k[3]),
-        close: parseFloat(k[4]),
-        volume: parseFloat(k[5]),
-        closeTime: Number(k[6]),
-        isClosed: true
-      }));
+      if (!Array.isArray(resp.data)) {
+        throw new Error(`Invalid klines response for ${symbol}`);
+      }
+
+      return resp.data.map((k: any, idx: number, arr: any[]) => {
+        const isLast = idx === arr.length - 1;
+        const now = Date.now();
+        const closeTime = Number(k[6]);
+        // Candle is closed if closeTime has elapsed or is not the last open bar
+        const isClosed = !isLast || now >= closeTime;
+
+        return {
+          openTime: Number(k[0]),
+          open: parseFloat(k[1]),
+          high: parseFloat(k[2]),
+          low: parseFloat(k[3]),
+          close: parseFloat(k[4]),
+          volume: parseFloat(k[5]),
+          closeTime,
+          isClosed
+        };
+      });
     } catch (err: any) {
-      console.warn(`[BinanceService] Klines error for ${symbol} ${interval}:`, err.message);
-      return this.generateSimulatedKlines(symbol, interval, limit);
+      console.error(`[BinanceService] Klines fetch failed for ${symbol} ${interval}:`, err.message);
+      // Strictly NO simulated klines fallback
+      throw err;
     }
   }
 
@@ -79,8 +110,10 @@ export class BinanceMarketDataService {
       this.ws.close();
     }
 
+    if (symbols.length === 0) return;
+
     const streams = symbols
-      .slice(0, 10) // batch top symbols for WS connection
+      .slice(0, 20) // batch top symbols for WS connection
       .flatMap(sym => intervals.map(int => `${sym.toLowerCase()}@kline_${int}`))
       .join('/');
 
@@ -108,7 +141,7 @@ export class BinanceMarketDataService {
               close: parseFloat(k.c),
               volume: parseFloat(k.v),
               closeTime: k.T,
-              isClosed: k.x // k.x is true when candle closes
+              isClosed: Boolean(k.x) // k.x is true when candle officially closes
             };
 
             if (this.onCandleCallback) {
@@ -145,50 +178,6 @@ export class BinanceMarketDataService {
 
   getIsConnected(): boolean {
     return this.isConnected;
-  }
-
-  private getMockTopGainers(): BinanceTicker24h[] {
-    return [
-      { symbol: 'BTCUSDT', priceChangePercent: 4.25, lastPrice: 96450.0, volume: 15420, quoteVolume: 1487259000, highPrice: 97100, lowPrice: 94800 },
-      { symbol: 'ETHUSDT', priceChangePercent: 6.80, lastPrice: 2840.5, volume: 89000, quoteVolume: 252800000, highPrice: 2890, lowPrice: 2650 },
-      { symbol: 'SOLUSDT', priceChangePercent: 38.45, lastPrice: 198.2, volume: 450000, quoteVolume: 89190000, highPrice: 204, lowPrice: 143 },
-      { symbol: 'XRPUSDT', priceChangePercent: 12.10, lastPrice: 2.45, volume: 1200000, quoteVolume: 2940000, highPrice: 2.58, lowPrice: 2.18 },
-      { symbol: 'DOGEUSDT', priceChangePercent: 15.60, lastPrice: 0.285, volume: 3500000, quoteVolume: 997500, highPrice: 0.298, lowPrice: 0.246 },
-      { symbol: 'AVAXUSDT', priceChangePercent: 24.15, lastPrice: 34.8, volume: 140000, quoteVolume: 4872000, highPrice: 36.2, lowPrice: 28.0 },
-      { symbol: 'LINKUSDT', priceChangePercent: 18.90, lastPrice: 18.4, volume: 220000, quoteVolume: 4048000, highPrice: 19.1, lowPrice: 15.5 }
-    ];
-  }
-
-  private generateSimulatedKlines(symbol: string, interval: string, limit: number): Candle[] {
-    const candles: Candle[] = [];
-    const basePrice = symbol.includes('BTC') ? 95000 : symbol.includes('ETH') ? 2800 : symbol.includes('SOL') ? 190 : 10;
-    const now = Date.now();
-    const intervalMs = interval === '15m' ? 15 * 60000 : interval === '30m' ? 30 * 60000 : interval === '1h' ? 3600000 : 86400000;
-
-    let price = basePrice;
-    for (let i = limit; i >= 0; i--) {
-      const openTime = now - i * intervalMs;
-      const change = (Math.random() - 0.48) * (basePrice * 0.008);
-      const open = price;
-      const close = price + change;
-      const high = Math.max(open, close) + Math.random() * (basePrice * 0.004);
-      const low = Math.min(open, close) - Math.random() * (basePrice * 0.004);
-      const volume = 100 + Math.random() * 500;
-      price = close;
-
-      candles.push({
-        openTime,
-        open: parseFloat(open.toFixed(4)),
-        high: parseFloat(high.toFixed(4)),
-        low: parseFloat(low.toFixed(4)),
-        close: parseFloat(close.toFixed(4)),
-        volume: parseFloat(volume.toFixed(2)),
-        closeTime: openTime + intervalMs - 1,
-        isClosed: i > 0
-      });
-    }
-
-    return candles;
   }
 }
 

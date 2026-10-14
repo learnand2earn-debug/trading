@@ -35,7 +35,7 @@ export interface V1CandidateSignal {
   rsi15M: number;
   rsi30M: number;
   rsi1H: number;
-  rsi4H: number;
+  rsi4H?: number;
   rsi1D: number;
   trend1H: 'Uptrend' | 'Downtrend' | 'Sideways';
   trend1D: 'Uptrend' | 'Downtrend' | 'Sideways';
@@ -46,6 +46,9 @@ export interface V1CandidateSignal {
   isV1Confirmed: boolean;
   timeAgo: string;
   detectedAt: number;
+  tradingViewUrl?: string;
+  confirmationStatus?: 'CONFIRMED' | 'PENDING';
+  qualificationReason?: string;
 }
 
 export interface V1ActiveCoin {
@@ -56,6 +59,7 @@ export interface V1ActiveCoin {
   rsi1H: number;
   rsi30M: number;
   timeStr: string;
+  tradingViewUrl?: string;
 }
 
 export interface V1ScanResponse {
@@ -68,6 +72,8 @@ export interface V1ScanResponse {
   lastScanTimeStr: string;
   rsiMin: number;
   rsiMax: number;
+  exchange?: string;
+  marketType?: string;
 }
 
 export interface HiddenCandidateSignal {
@@ -85,6 +91,12 @@ export interface HiddenCandidateSignal {
   isHBConfirmed: boolean;
   timeAgo: string;
   detectedAt: number;
+  tradingViewUrl?: string;
+  confirmationStatus?: 'CONFIRMED' | 'PENDING';
+  qualificationReason?: string;
+  divergenceDetected?: boolean;
+  pivot1?: any;
+  pivot2?: any;
 }
 
 export interface HiddenActiveCoin {
@@ -95,6 +107,7 @@ export interface HiddenActiveCoin {
   rsi1H: number;
   rsi30M: number;
   timeStr: string;
+  tradingViewUrl?: string;
 }
 
 export interface HiddenScanResponse {
@@ -107,12 +120,23 @@ export interface HiddenScanResponse {
   lastScanTimeStr: string;
   rsiMin: number;
   rsiMax: number;
+  exchange?: string;
+  marketType?: string;
 }
 
 export interface CoinDetailData {
   symbol: string;
+  cleanSymbol?: string;
+  exchange?: string;
+  marketType?: string;
   lastPrice: number;
   change24h: number;
+  tradingViewUrl?: string;
+  rsi1h?: any;
+  rsi30m?: any;
+  rsi15m?: any;
+  rsi1d?: any;
+  divergence?: any;
   candles: {
     '15m': any[];
     '30m': any[];

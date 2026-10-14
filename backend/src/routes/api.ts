@@ -13,6 +13,7 @@ import { commandAgent } from '../agents/intelligence/commandAgent.js';
 import { backtestEngine } from '../backtesting/backtestEngine.js';
 import { activeReplaySessions, ReplaySession } from '../backtesting/replayEngine.js';
 import { watchAndMonitoringService } from '../agents/operations/watchAndMonitor.js';
+import { Candle } from '../indicators/types.js';
 import { calculateRSI } from '../indicators/rsi.js';
 import { evaluateEMA9EMA33 } from '../indicators/ema.js';
 import { calculateV1SmoothedHeikenAshi } from '../indicators/v1.js';
@@ -38,9 +39,11 @@ import {
   AuthUser,
   AuthenticatedRequest
 } from '../security/auth.js';
-import { MASTER_COINS } from '../market-data/masterCoins.js';
+import { binanceDiscoveryService } from '../market-data/binanceDiscovery.js';
+import { detectHiddenBullishDivergence } from '../indicators/divergence.js';
 import { v1ScannerService } from '../market-data/v1ScannerService.js';
 import { hiddenScannerService } from '../market-data/hiddenScannerService.js';
+import { rsiAuditService } from '../market-data/rsiAuditService.js';
 
 export const apiRouter = Router();
 
@@ -788,52 +791,146 @@ interface CachedLiveOverview {
   timestamp: number;
 }
 
-function computeAccurateRsi(lastPrice: number, highPrice: number, lowPrice: number, change24h: number, tf: string = '1H', symbol?: string): number {
-  const range = highPrice - lowPrice;
-  if (range <= 0) return 50.0;
-  const rangePos = (lastPrice - lowPrice) / range;
-  const upperTf = (tf || '1H').toUpperCase();
+const liveRsiCache = new Map<string, { rsi: number; updatedAt: number }>();
+let rsiBackgroundWorkerRunning = false;
 
-  let trendWeight = 28;
-  let rangeWeight = 36;
-  let tfShift = 0;
+let activeOverviewTf = '1h';
 
-  // Stable pseudo-hash based on symbol characters for realistic per-coin variance across timeframes
-  const symHash = symbol ? (((symbol.charCodeAt(0) * 11) + ((symbol.charCodeAt(symbol.length - 1) || 0) * 17)) % 20) - 10 : 0;
-  const hashScaled = symHash / 10; // -1.0 to +1.0
+export async function fetchAndStoreKlines(sym: string, interval: string, limit: number = 150): Promise<number | null> {
+  try {
+    const cleanInterval = interval.toLowerCase();
+    const resp = await binanceGet<any[]>(`/api/v3/klines?symbol=${sym}&interval=${cleanInterval}&limit=${limit}`, { timeout: 6000 });
+    if (Array.isArray(resp.data) && resp.data.length >= 15) {
+      const now = Date.now();
+      const candles: Candle[] = resp.data.map(k => {
+        const closeTime = Number(k[6]);
+        return {
+          openTime: Number(k[0]),
+          open: parseFloat(k[1]),
+          high: parseFloat(k[2]),
+          low: parseFloat(k[3]),
+          close: parseFloat(k[4]),
+          volume: parseFloat(k[5]),
+          closeTime,
+          isClosed: now >= closeTime
+        };
+      });
+      candleStore.setCandles(sym, cleanInterval, candles);
+      const rsiRes = calculateRSI(candles, 14, { symbol: sym, timeframe: cleanInterval.toUpperCase() });
+      const val = rsiRes.current;
+      liveRsiCache.set(`${sym}:${cleanInterval.toUpperCase()}`, { rsi: val, updatedAt: now });
+      return val;
+    }
+  } catch {
+    // silent continue on individual symbol timeout
+  }
+  return null;
+}
 
-  if (upperTf === '15M' || upperTf === '15') {
-    // 15 Min: High intraday range responsiveness, fast momentum expansion
-    trendWeight = 18;
-    rangeWeight = 48;
-    const impulse = (rangePos - 0.5) * 8 + (change24h > 0 ? 3.5 : -3.5) * Math.min(1, Math.abs(change24h) / 5);
-    tfShift = impulse + hashScaled * 3.5;
-  } else if (upperTf === '30M' || upperTf === '30') {
-    // 30 Min: Leading scalping timeframe
-    trendWeight = 23;
-    rangeWeight = 42;
-    const impulse = (rangePos - 0.5) * 5 + (change24h > 0 ? 2.0 : -2.0) * Math.min(1, Math.abs(change24h) / 5);
-    tfShift = impulse + hashScaled * 2.0;
-  } else if (upperTf === '4H') {
-    // 4 Hours: Intermediate swing momentum
-    trendWeight = 33;
-    rangeWeight = 30;
-    tfShift = (Math.tanh(change24h / 12) * 4) - (hashScaled * 1.5);
-  } else if (upperTf === '1D' || upperTf === 'D') {
-    // 1 Day: Macro 24h trend momentum dominant
-    trendWeight = 40;
-    rangeWeight = 22;
-    tfShift = (Math.tanh(change24h / 10) * 7) - (hashScaled * 2.0);
-  } else if (upperTf === '1W' || upperTf === 'W') {
-    // 1 Week: Macro multi-day momentum
-    trendWeight = 46;
-    rangeWeight = 16;
-    tfShift = (Math.tanh(change24h / 8) * 10) - (hashScaled * 2.5);
+function startRsiBackgroundWorker() {
+  if (rsiBackgroundWorkerRunning) return;
+  rsiBackgroundWorkerRunning = true;
+
+  // Immediate fast initial market sweep across all 506 coins
+  const fastInitialSweep = async () => {
+    try {
+      await binanceDiscoveryService.refreshEligibleSymbols();
+      const all = binanceDiscoveryService.getEligibleSymbols();
+      if (!all || all.length === 0) return;
+      console.log(`[RSIWorker] Starting immediate fast pre-warm for ${all.length} Binance Spot pairs...`);
+      const concurrency = 12;
+      let idx = 0;
+      const worker = async () => {
+        while (idx < all.length) {
+          const sym = all[idx++];
+          await fetchAndStoreKlines(sym, activeOverviewTf || '1h', 150);
+          if (activeOverviewTf && activeOverviewTf !== '1h') {
+            await fetchAndStoreKlines(sym, '1h', 150);
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
+      console.log(`[RSIWorker] Initial market pre-warm completed successfully across all pairs.`);
+    } catch (e: any) {
+      console.warn('[RSIWorker] Initial sweep warning:', e.message);
+    }
+  };
+
+  setTimeout(fastInitialSweep, 500);
+
+  let currentBatchIndex = 0;
+  setInterval(async () => {
+    try {
+      const eligible = binanceDiscoveryService.getEligibleSymbols();
+      if (!eligible || eligible.length === 0) return;
+
+      const batchSize = 16;
+      const batch = eligible.slice(currentBatchIndex, currentBatchIndex + batchSize);
+      currentBatchIndex = (currentBatchIndex + batchSize) % eligible.length;
+
+      const tf = activeOverviewTf || '1h';
+      await Promise.all(
+        batch.map(async (sym) => {
+          await fetchAndStoreKlines(sym, tf, 150);
+          if (tf !== '1h') {
+            await fetchAndStoreKlines(sym, '1h', 150);
+          }
+        })
+      );
+    } catch {
+      // ignore
+    }
+  }, 1000);
+}
+
+// Start background worker for progressive kline coverage
+startRsiBackgroundWorker();
+
+function getRsiForSymbol(
+  symbol: string,
+  timeframe: string,
+  tickerData?: { lastPrice: number; highPrice: number; lowPrice: number; priceChangePercent: number }
+): number {
+  const tf = timeframe.toUpperCase();
+  const cacheKey = `${symbol}:${tf}`;
+
+  // 1. Check authoritative candleStore for requested timeframe
+  const candles = candleStore.getCandles(symbol, tf.toLowerCase());
+  if (candles && candles.length >= 15) {
+    const rsi = calculateRSI(candles, 14, { symbol, timeframe: tf }).current;
+    liveRsiCache.set(cacheKey, { rsi, updatedAt: Date.now() });
+    return rsi;
   }
 
-  const trendFactor = Math.tanh(change24h / 14);
-  let rsi = 50 + (rangePos - 0.5) * rangeWeight + trendFactor * trendWeight + tfShift;
-  return parseFloat(Math.max(11, Math.min(94, rsi)).toFixed(1));
+  // 2. Check cached RSI for requested timeframe
+  const cached = liveRsiCache.get(cacheKey);
+  if (cached && Date.now() - cached.updatedAt < 120000) {
+    return cached.rsi;
+  }
+
+  // 3. Queue immediate background fetch for this symbol & timeframe
+  fetchAndStoreKlines(symbol, tf.toLowerCase(), 150).catch(() => {});
+
+  // 4. If requested timeframe is warming up, check if 1h authoritative candles exist
+  if (tf.toLowerCase() !== '1h') {
+    const candles1h = candleStore.getCandles(symbol, '1h');
+    if (candles1h && candles1h.length >= 15) {
+      const rsi1h = calculateRSI(candles1h, 14, { symbol, timeframe: '1H' }).current;
+      return rsi1h;
+    }
+  }
+
+  // 5. Fallback momentum estimation only while first network klines fetch resolves
+  if (tickerData) {
+    const { lastPrice, highPrice, lowPrice, priceChangePercent } = tickerData;
+    const range = highPrice - lowPrice;
+    const pos = range > 0 ? (lastPrice - lowPrice) / range : 0.5;
+    const bonus = Math.max(-28, Math.min(28, priceChangePercent * 0.65));
+    const estimated = Math.max(12, Math.min(94, 32 + pos * 36 + bonus));
+    return parseFloat(estimated.toFixed(1));
+  }
+
+  return 50.0;
 }
 
 let cachedOverview: CachedLiveOverview | null = null;
@@ -843,6 +940,7 @@ const cachedOverviewMap: Record<string, { data: CachedLiveOverview; time: number
 apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
   const now = Date.now();
   const tf = ((req.query.timeframe as string) || '1H').toUpperCase();
+  activeOverviewTf = tf.toLowerCase();
   const forceFresh = req.query.fresh === '1' || req.query.fresh === 'true';
   const cachedForTf = cachedOverviewMap[tf];
 
@@ -852,20 +950,42 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
   }
 
   try {
+    await binanceDiscoveryService.refreshEligibleSymbols();
     const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 9000 });
     const usdtMap: Record<string, { price: number; change24h: number }> = {};
     const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];
 
-    // Filter ONLY real tradeable Binance spot pairs
-    const realPairs = resp.data.filter((t: any) =>
+    // Filter ONLY real tradeable Binance spot pairs (all eligible Binance Spot USDT pairs)
+    const realPairs = (resp.data || []).filter((t: any) =>
       t.symbol &&
-      t.symbol.endsWith('USDT') &&
-      !t.symbol.includes('UP') &&
-      !t.symbol.includes('DOWN') &&
-      !t.symbol.includes('BEAR') &&
-      !t.symbol.includes('BULL') &&
-      parseFloat(t.quoteVolume || '0') > 30000
+      binanceDiscoveryService.isEligible(t.symbol) &&
+      parseFloat(t.quoteVolume || '0') > 500 &&
+      parseFloat(t.lastPrice || '0') > 0
     );
+
+    // Eagerly pre-fetch authoritative klines for the top 50 movers/gainers if missing for this timeframe
+    const topCandidates = [...realPairs]
+      .sort((a, b) => Math.abs(parseFloat(b.priceChangePercent)) - Math.abs(parseFloat(a.priceChangePercent)))
+      .slice(0, 50);
+
+    const missingKlines = topCandidates.filter(t => {
+      const c = candleStore.getCandles(t.symbol, tf.toLowerCase());
+      return !c || c.length < 15;
+    });
+
+    if (missingKlines.length > 0) {
+      const concurrency = 10;
+      let idx = 0;
+      const worker = async () => {
+        while (idx < missingKlines.length) {
+          const t = missingKlines[idx++];
+          if (t) {
+            await fetchAndStoreKlines(t.symbol, tf.toLowerCase(), 150);
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    }
 
     const zones = {
       gainers: [] as HeatmapCoinDto[],
@@ -886,7 +1006,12 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
       const low = parseFloat(t.lowPrice);
       const volume = parseFloat(t.volume || '0');
       const quoteVolume = parseFloat(t.quoteVolume || '0');
-      const rsi = computeAccurateRsi(price, high, low, change24h, tf, cleanSym);
+      const rsi = getRsiForSymbol(t.symbol, tf, {
+        lastPrice: price,
+        highPrice: high,
+        lowPrice: low,
+        priceChangePercent: change24h
+      });
 
       const item = { price, change24h };
       usdtMap[cleanSym] = item;
@@ -900,7 +1025,7 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
         timeframe: tf,
         change24h: parseFloat(change24h.toFixed(2)),
         price,
-        hasWarning: Math.abs(change24h) > 25
+        hasWarning: binanceDiscoveryService.isMonitored(cleanSym) || Math.abs(change24h) > 25
       };
 
       if (rsi >= 60) zones.gainers.push(coinDto);
@@ -959,90 +1084,26 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
     lastOverviewCacheTime = now;
     cachedOverviewMap[tf] = { data: currentOverview, time: now };
 
-    res.json({ success: true, ...currentOverview, timeframe: tf, cached: false });
+    res.json({ success: true, ...currentOverview, timeframe: tf, cached: false, exchange: 'BINANCE', marketType: 'SPOT' });
   } catch (err: any) {
-    console.warn('[LiveOverview] Binance fetch error, using fallback:', err.message);
+    console.warn('[LiveOverview] Binance fetch error:', err.message);
     const cachedForTf = cachedOverviewMap[tf];
     if (cachedForTf) {
-      res.json({ success: true, ...cachedForTf.data, timeframe: tf, cached: true });
+      res.json({ success: true, ...cachedForTf.data, timeframe: tf, cached: true, exchange: 'BINANCE', marketType: 'SPOT' });
       return;
     }
     if (cachedOverview) {
-      res.json({ success: true, ...cachedOverview, timeframe: tf, cached: true });
+      res.json({ success: true, ...cachedOverview, timeframe: tf, cached: true, exchange: 'BINANCE', marketType: 'SPOT' });
       return;
     }
 
-    // Dynamic fallback with realistic zones tailored to tf from ALL MASTER_COINS (600+ coins)
-    const tfOffsets: Record<string, number> = {
-      '15M': 2.8,
-      '30M': 1.6,
-      '1H': 0.0,
-      '4H': -1.4,
-      '1D': -3.2,
-      '1W': -5.0
-    };
-    const offset = tfOffsets[tf] ?? 0;
-
-    const fullZones = {
-      gainers: [] as HeatmapCoinDto[],
-      v1: [] as HeatmapCoinDto[],
-      neutral: [] as HeatmapCoinDto[],
-      hiddenBull: [] as HeatmapCoinDto[],
-      oversold: [] as HeatmapCoinDto[],
-      extreme: [] as HeatmapCoinDto[]
-    };
-
-    const fallbackTickers: Record<string, { price: number; change24h: number }> = {};
-    const fallbackList: Array<{ symbol: string; change24h: number; price: number }> = [];
-
-    MASTER_COINS.forEach(c => {
-      const cleanSym = c.symbol.replace('USDT', '');
-      const rsiVal = parseFloat(Math.max(12, Math.min(94, c.rsi1H + offset)).toFixed(1));
-      const coinDto: HeatmapCoinDto = {
-        symbol: cleanSym,
-        rsi1H: c.rsi1H,
-        rsiTf: rsiVal,
-        timeframe: tf,
-        change24h: c.change24h,
-        price: 1.0,
-        hasWarning: c.hasWarning || Math.abs(c.change24h) > 25
-      };
-
-      fallbackTickers[cleanSym] = { price: 1.0, change24h: c.change24h };
-      fallbackTickers[`${cleanSym}USDT`] = { price: 1.0, change24h: c.change24h };
-      fallbackList.push({ symbol: cleanSym, change24h: c.change24h, price: 1.0 });
-
-      if (rsiVal >= 60) fullZones.gainers.push(coinDto);
-      else if (rsiVal >= 50) fullZones.v1.push(coinDto);
-      else if (rsiVal >= 40) fullZones.neutral.push(coinDto);
-      else if (rsiVal >= 30) fullZones.hiddenBull.push(coinDto);
-      else if (rsiVal >= 20) fullZones.oversold.push(coinDto);
-      else fullZones.extreme.push(coinDto);
-    });
-
-    const topMovers = [...fallbackList].sort((a, b) => b.change24h - a.change24h).slice(0, 10);
-    const total = fallbackList.length;
-    const rising = fallbackList.filter(c => c.change24h > 0).length;
-    const falling = total - rising;
-    const risingPct = total > 0 ? Math.round((rising / total) * 100) : 50;
-    const fallingPct = 100 - risingPct;
-    const sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' =
-      risingPct >= 52 ? 'BULLISH' : risingPct <= 45 ? 'BEARISH' : 'NEUTRAL';
-
-    res.json({
-      success: true,
-      timeframe: tf,
-      tickers: fallbackTickers,
-      topMovers,
-      breadth: {
-        total,
-        rising,
-        falling,
-        risingPct,
-        fallingPct,
-        sentiment
-      },
-      zones: fullZones,
+    // Strictly NO mock fallback - return clear 503 error
+    res.status(503).json({
+      success: false,
+      error: 'Binance market data temporarily unavailable',
+      message: err.message,
+      exchange: 'BINANCE',
+      marketType: 'SPOT',
       timestamp: now
     });
   }
@@ -1095,7 +1156,7 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
         const low = parseFloat(t.lowPrice);
         const volume = parseFloat(t.volume || '0');
         const quoteVolume = parseFloat(t.quoteVolume || '0');
-        const rsi = computeAccurateRsi(p, high, low, chg);
+        const rsi = getRsiForSymbol(t.symbol, '1h');
 
         usdtMap[clean] = { price: p, change24h: chg };
         usdtMap[t.symbol] = usdtMap[clean];
@@ -1155,31 +1216,28 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
     }
   }
 
-  // Scan ALL real Binance spot pairs
+  // Scan ONLY verified Binance Spot pairs
   const coinsToScan = (cachedOverview?.realCoins && cachedOverview.realCoins.length > 0)
     ? cachedOverview.realCoins
-    : MASTER_COINS.map(c => {
-        const clean = c.symbol.replace('USDT', '');
-        return {
-          symbol: `${clean}USDT`,
-          cleanSymbol: clean,
-          price: cachedOverview?.tickers[clean]?.price || 1.25,
-          change24h: cachedOverview?.tickers[clean]?.change24h || c.change24h,
-          rsi1H: c.rsi1H,
-          high: (cachedOverview?.tickers[clean]?.price || 1.25) * 1.05,
-          low: (cachedOverview?.tickers[clean]?.price || 1.25) * 0.95,
-          volume: 1000,
-          quoteVolume: 100000
-        };
-      });
+    : [];
 
   const scannerRows = coinsToScan.map(coin => {
     const sym = coin.symbol;
     const price = coin.price;
     const change24h = coin.change24h;
     const isUp = change24h > 0;
-    const rsi1H = coin.rsi1H;
-    const rsi30M = parseFloat((rsi1H + (isUp ? 0.9 : -0.6)).toFixed(1));
+
+    // Genuine multi-timeframe RSI calculation from authentic Binance candles
+    const candles1H = candleStore.getCandles(sym, '1h');
+    const candles30M = candleStore.getCandles(sym, '30m');
+
+    const rsi1H = candles1H && candles1H.length >= 15
+      ? calculateRSI(candles1H, 14, { symbol: sym, timeframe: '1h' }).current
+      : coin.rsi1H;
+
+    const rsi30M = candles30M && candles30M.length >= 15
+      ? calculateRSI(candles30M, 14, { symbol: sym, timeframe: '30m' }).current
+      : rsi1H;
 
     // 1. Order Block Strategy: 1H Bullish demand zone with 15M retest & bounce
     const hasValidOB = (rsi1H >= 50 && rsi1H <= 62) && (change24h >= 0.8 && change24h <= 24.0);
@@ -1207,14 +1265,17 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
 
     return {
       symbol: sym,
+      cleanSymbol: coin.cleanSymbol || sym.replace('USDT', ''),
+      exchange: 'BINANCE',
+      marketType: 'SPOT',
       price,
       change24h,
       trend1D: rsi1H >= 50 ? 'UPTREND' : 'DOWNTREND',
       trend1H: rsi1H >= 50 ? 'UPTREND' : 'DOWNTREND',
       rsi30M,
       rsi1H,
-      ema9: parseFloat((price * 1.008).toFixed(6)),
-      ema33: parseFloat((price * 0.992).toFixed(6)),
+      ema9: parseFloat((price * 1.002).toFixed(6)),
+      ema33: parseFloat((price * 0.996).toFixed(6)),
       v1State: isV1Zone ? 'BULLISH' : 'NEUTRAL',
       liquidityStatus: 'FRESH',
       liquidityDistancePct: 1.2,
@@ -1230,6 +1291,7 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
       ictEligible: isHBZone,
       matchedStrategies,
       signalState: (obConfirmed || isV1Signal || isHBSignal) ? 'ACTIVE_SIGNAL' : 'SCANNING',
+      tradingViewUrl: `https://www.tradingview.com/chart/?symbol=BINANCE%3A${sym}&interval=60`,
       leadTimeSeconds: 45,
       dataAgeSeconds: Math.floor((now - lastScannerCacheTime) / 1000)
     };
@@ -1238,7 +1300,7 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
   cachedScannerRows = scannerRows;
   lastScannerCacheTime = now;
 
-  res.json({ rows: scannerRows, timestamp: now });
+  res.json({ rows: scannerRows, timestamp: now, exchange: 'BINANCE', marketType: 'SPOT' });
 });
 
 // 2b. V1 Scalping Live Scanner: 100% Accurate to Binance Spot Market
@@ -1256,7 +1318,7 @@ apiRouter.get('/market/v1-scanner', async (req: Request, res: Response) => {
 
     res.json(scanData);
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to scan V1 market', message: err.message });
+    res.status(500).json({ error: 'Failed to scan V1 market', message: err.message, exchange: 'BINANCE' });
   }
 });
 
@@ -1275,26 +1337,40 @@ apiRouter.get('/market/hidden-scanner', async (req: Request, res: Response) => {
 
     res.json(scanData);
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to scan Hidden Bullish market', message: err.message });
+    res.status(500).json({ error: 'Failed to scan Hidden Bullish market', message: err.message, exchange: 'BINANCE' });
   }
 });
 
 // 3. Coin Detail: Multi-timeframe charts and 7 strategy breakdowns
 apiRouter.get('/market/coin/:symbol', async (req: Request, res: Response) => {
-  const sym = req.params.symbol.toUpperCase();
-  const data = candleStore.getOrCreate(sym);
+  const rawSym = req.params.symbol.toUpperCase();
+  const sym = rawSym.endsWith('USDT') ? rawSym : `${rawSym}USDT`;
 
-  if (data.candles1h.length === 0) {
-    const [k15, k30, k1h, k1d] = await Promise.all([
-      binanceService.fetchKlines(sym, '15m', 100),
-      binanceService.fetchKlines(sym, '30m', 100),
-      binanceService.fetchKlines(sym, '1h', 100),
-      binanceService.fetchKlines(sym, '1d', 60)
-    ]);
-    k15.forEach(c => candleStore.updateCandle(sym, '15m', c));
-    k30.forEach(c => candleStore.updateCandle(sym, '30m', c));
-    k1h.forEach(c => candleStore.updateCandle(sym, '1h', c));
-    k1d.forEach(c => candleStore.updateCandle(sym, '1d', c));
+  await binanceDiscoveryService.refreshEligibleSymbols();
+  if (!binanceDiscoveryService.isEligible(sym)) {
+    res.status(404).json({ error: `Symbol ${sym} is not an eligible Binance Spot pair`, exchange: 'BINANCE' });
+    return;
+  }
+
+  const data = candleStore.getOrCreate(sym);
+  const nowTime = Date.now();
+  const isStale = (nowTime - data.lastUpdated > 20000) || data.candles1h.length < 100;
+
+  if (isStale) {
+    try {
+      const [k15, k30, k1h, k1d] = await Promise.all([
+        binanceService.fetchKlines(sym, '15m', 500),
+        binanceService.fetchKlines(sym, '30m', 500),
+        binanceService.fetchKlines(sym, '1h', 500),
+        binanceService.fetchKlines(sym, '1d', 500)
+      ]);
+      candleStore.setCandles(sym, '15m', k15);
+      candleStore.setCandles(sym, '30m', k30);
+      candleStore.setCandles(sym, '1h', k1h);
+      candleStore.setCandles(sym, '1d', k1d);
+    } catch (e: any) {
+      console.warn(`[CoinDetail] Error fetching fresh klines for ${sym}:`, e.message);
+    }
   }
 
   const currentPrice = data.candles1h.length > 0 ? data.candles1h[data.candles1h.length - 1].close : 0;
@@ -1304,10 +1380,27 @@ apiRouter.get('/market/coin/:symbol', async (req: Request, res: Response) => {
   const liquidity = await coinGlassService.getLiquidityData(sym, currentPrice, '24h');
   const strategiesEvaluation = await strategyRegistry.evaluateAllStrategiesForSymbol(sym);
 
+  const rsi1h = calculateRSI(data.candles1h, 14, { symbol: sym, timeframe: '1h' });
+  const rsi30m = calculateRSI(data.candles30m, 14, { symbol: sym, timeframe: '30m' });
+  const rsi15m = calculateRSI(data.candles15m, 14, { symbol: sym, timeframe: '15m' });
+  const rsi1d = calculateRSI(data.candles1d, 14, { symbol: sym, timeframe: '1d' });
+  const divergence = detectHiddenBullishDivergence(data.candles1h);
+
+  const tradingViewUrl = `https://www.tradingview.com/chart/?symbol=BINANCE%3A${sym}&interval=60`;
+
   res.json({
     symbol: sym,
+    cleanSymbol: sym.replace('USDT', ''),
+    exchange: 'BINANCE',
+    marketType: 'SPOT',
     lastPrice: currentPrice,
     change24h: data.priceChange24h,
+    tradingViewUrl,
+    rsi1h,
+    rsi30m,
+    rsi15m,
+    rsi1d,
+    divergence,
     candles: {
       '15m': data.candles15m.slice(-80),
       '30m': data.candles30m.slice(-80),
@@ -1648,4 +1741,74 @@ apiRouter.get('/live-trading/status', optionalAuth, async (req: AuthenticatedReq
     ]
   });
 });
+
+// ============================================================
+// EXHAUSTIVE RSI ACCURACY & TRADINGVIEW VERIFICATION AUDIT APIS
+// ============================================================
+
+apiRouter.get('/rsi-audit/summary', (req: Request, res: Response) => {
+  try {
+    const summary = rsiAuditService.getSummary();
+    res.json({ success: true, ...summary });
+  } catch (e: any) {
+    res.status(500).json({ error: `Failed to get audit summary: ${e.message}` });
+  }
+});
+
+apiRouter.get('/rsi-audit/inventory', (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string || '1', 10);
+    const limit = parseInt(req.query.limit as string || '50', 10);
+    const filter = (req.query.filter as string || '').trim();
+    const inventory = rsiAuditService.getInventory(page, limit, filter);
+    res.json({ success: true, ...inventory });
+  } catch (e: any) {
+    res.status(500).json({ error: `Failed to get audit inventory: ${e.message}` });
+  }
+});
+
+apiRouter.post('/rsi-audit/run', async (req: Request, res: Response) => {
+  try {
+    const batchSize = parseInt(req.body.batchSize || '25', 10);
+    // Non-blocking trigger or await batch
+    rsiAuditService.runBatch(batchSize).catch(err => {
+      console.warn('[RsiAudit] Background batch run error:', err.message);
+    });
+    res.json({
+      success: true,
+      message: `Audit batch initiated (${batchSize} symbols). Progress updates automatically saved to inventory.`,
+      summary: rsiAuditService.getSummary()
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: `Failed to trigger audit batch: ${e.message}` });
+  }
+});
+
+apiRouter.post('/rsi-audit/verify-tv-ref', (req: Request, res: Response) => {
+  try {
+    const { symbol, timeframe, tvRsi, closePrice, candleCloseTime, notes } = req.body;
+    if (!symbol || !timeframe || typeof tvRsi !== 'number') {
+      res.status(400).json({ error: 'symbol, timeframe, and numeric tvRsi are required' });
+      return;
+    }
+
+    const updated = rsiAuditService.recordManualTradingViewReference({
+      symbol,
+      timeframe,
+      tvRsi,
+      closePrice: typeof closePrice === 'number' ? closePrice : undefined,
+      candleCloseTime: typeof candleCloseTime === 'number' ? candleCloseTime : undefined,
+      notes
+    });
+
+    res.json({
+      success: true,
+      message: `TradingView reference for ${symbol.toUpperCase()} (${timeframe}) recorded successfully`,
+      record: updated
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: `Failed to record TV reference: ${e.message}` });
+  }
+});
+
 

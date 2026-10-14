@@ -25,6 +25,24 @@ export interface RSIResult {
   previous: number;
   slope: 'RISING' | 'FALLING' | 'FLAT';
   history: number[];
+  // Full numerical precision raw values (unrounded)
+  rawCurrent?: number;
+  rawPrevious?: number;
+  // Authoritative provenance fields
+  exchange: 'BINANCE';
+  marketType: 'SPOT';
+  symbol?: string;
+  timeframe?: string;
+  candleStatus: 'OPEN' | 'CLOSED' | 'UNAVAILABLE';
+  period: number;
+  source: 'close';
+  method: 'WILDER_RMA';
+  candleOpenTime?: number;
+  candleCloseTime?: number;
+  lastUpdated: number;
+  closedCandleRsi?: number;
+  liveCandleRsi?: number;
+  isInsufficientData?: boolean;
 }
 
 export interface EMAResult {
@@ -80,4 +98,28 @@ export interface ICTPatternResult {
   pumpPct: number;
   trendlinePassed: boolean;
   trend1HValid: boolean; // UP or DOWN, NOT sideways
+}
+
+export interface DivergencePivot {
+  index: number;
+  timestamp: number;
+  price: number;
+  rsi: number;
+  isConfirmed: boolean;
+}
+
+export interface HiddenBullishDivergenceResult {
+  detected: boolean;
+  pivot1?: DivergencePivot; // Earlier swing low
+  pivot2?: DivergencePivot; // Recent swing low (Higher Low in Price, Lower Low in RSI)
+  priceLow1?: number;
+  priceLow2?: number;
+  rsiLow1?: number;
+  rsiLow2?: number;
+  isConfirmed: boolean;
+  confirmationDelayBars: number;
+  reason: string;
+  sourceStructureMatched: boolean;
+  downwardPct: number;
+  reactionPct: number;
 }
