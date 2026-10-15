@@ -819,7 +819,8 @@ export async function fetchAndStoreKlines(sym: string, interval: string, limit: 
         };
       });
       candleStore.setCandles(sym, cleanInterval, candles);
-      const rsiRes = calculateRSI(candles, 14, { symbol: sym, timeframe: cleanInterval.toUpperCase() });
+      // useClosedCandleOnly=true: matches TradingView RSI exactly (closed bars only)
+      const rsiRes = calculateRSI(candles, 14, { symbol: sym, timeframe: cleanInterval.toUpperCase(), useClosedCandleOnly: true });
       const val = rsiRes.current;
       liveRsiCache.set(`${sym}:${cleanInterval.toUpperCase()}`, { rsi: val, updatedAt: now });
       return val;
@@ -1105,7 +1106,8 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
       const candles = candleStore.getCandles(sym, tf.toLowerCase());
       const lastCandle = candles && candles.length > 0 ? candles[candles.length - 1] : null;
       const price = lastCandle ? lastCandle.close : 1.0;
-      const rsi = candles && candles.length >= 15 ? calculateRSI(candles, 14, { symbol: sym, timeframe: tf }).current : 50.0;
+      // useClosedCandleOnly=true: matches TradingView RSI exactly (closed bars only)
+      const rsi = candles && candles.length >= 15 ? calculateRSI(candles, 14, { symbol: sym, timeframe: tf, useClosedCandleOnly: true }).current : 50.0;
       const change24h = 0.0;
 
       fallbackTickers[cleanSym] = { price, change24h };
@@ -1300,11 +1302,11 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
     const candles30M = candleStore.getCandles(sym, '30m');
 
     const rsi1H = candles1H && candles1H.length >= 15
-      ? calculateRSI(candles1H, 14, { symbol: sym, timeframe: '1h' }).current
+      ? calculateRSI(candles1H, 14, { symbol: sym, timeframe: '1h', useClosedCandleOnly: true }).current
       : coin.rsi1H;
 
     const rsi30M = candles30M && candles30M.length >= 15
-      ? calculateRSI(candles30M, 14, { symbol: sym, timeframe: '30m' }).current
+      ? calculateRSI(candles30M, 14, { symbol: sym, timeframe: '30m', useClosedCandleOnly: true }).current
       : rsi1H;
 
     // 1. Order Block Strategy: 1H Bullish demand zone with 15M retest & bounce
