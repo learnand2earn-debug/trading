@@ -39,11 +39,18 @@ import {
   AuthUser,
   AuthenticatedRequest
 } from '../security/auth.js';
-import { binanceDiscoveryService } from '../market-data/binanceDiscovery.js';
+import { binanceDiscoveryService, EXCLUDED_STABLECOINS } from '../market-data/binanceDiscovery.js';
 import { detectHiddenBullishDivergence } from '../indicators/divergence.js';
 import { v1ScannerService } from '../market-data/v1ScannerService.js';
 import { hiddenScannerService } from '../market-data/hiddenScannerService.js';
 import { rsiAuditService } from '../market-data/rsiAuditService.js';
+
+export const DASHBOARD_TRACKED_SYMBOLS = [
+  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT',
+  'LINKUSDT', 'SUIUSDT', 'NEARUSDT', 'APTUSDT', 'DOTUSDT', 'INJUSDT', 'RENDERUSDT', 'TIAUSDT',
+  'FETUSDT', 'PEPEUSDT', 'SHIBUSDT', 'LTCUSDT', 'BCHUSDT', 'UNIUSDT', 'ATOMUSDT', 'FILUSDT',
+  'ARBUSDT', 'OPUSDT', 'CRVUSDT', 'DYDXUSDT', 'AAVEUSDT', 'STXUSDT', 'SEIUSDT', 'FTMUSDT'
+];
 
 export const apiRouter = Router();
 
@@ -763,8 +770,8 @@ interface RealBinanceCoin {
   low: number;
   volume: number;
   quoteVolume: number;
-  rsi1H: number;
-  rsiTf?: number;
+  rsi1H: number | null;
+  rsiTf?: number | null;
 }
 
 interface CachedLiveOverview {
@@ -819,8 +826,9 @@ export async function fetchAndStoreKlines(sym: string, interval: string, limit: 
         };
       });
       candleStore.setCandles(sym, cleanInterval, candles);
-      // useClosedCandleOnly=true: matches TradingView RSI exactly (closed bars only)
-      const rsiRes = calculateRSI(candles, 14, { symbol: sym, timeframe: cleanInterval.toUpperCase(), useClosedCandleOnly: true });
+      // Full Wilder RMA on ALL candles (150-200 bars = accurate convergence).
+      // TradingView Live Parity: current is the live forming bar RSI (matches TradingView scale badge)
+      const rsiRes = calculateRSI(candles, 14, { symbol: sym, timeframe: cleanInterval.toUpperCase() });
       const val = rsiRes.current;
       liveRsiCache.set(`${sym}:${cleanInterval.toUpperCase()}`, { rsi: val, updatedAt: now });
       return val;
@@ -836,28 +844,33 @@ function startRsiBackgroundWorker() {
   rsiBackgroundWorkerRunning = true;
 
   let currentBatchIndex = 0;
-  // Gentle progressive worker: fetches 2 symbols sequentially every 4 seconds (~30 req/min, <3% rate limit)
+  // Progressively refresh klines for tracked symbols so their RSI is always warm
   setInterval(async () => {
     if (isBinanceCircuitBreakerActive()) return;
 
     try {
-      const eligible = binanceDiscoveryService.getEligibleSymbols();
-      if (!eligible || eligible.length === 0) return;
+      const symbolsToMaintain = [
+        ...DASHBOARD_TRACKED_SYMBOLS,
+        ...(hiddenScannerService.getCachedScan()?.activeCoins.map(c => c.symbol) || []),
+        ...(v1ScannerService.getCachedScan()?.activeCoins.map(c => c.symbol) || [])
+      ];
+      const uniqueSymbols = Array.from(new Set(symbolsToMaintain));
+      if (uniqueSymbols.length === 0) return;
 
       const batchSize = 2;
-      const batch = eligible.slice(currentBatchIndex, currentBatchIndex + batchSize);
-      currentBatchIndex = (currentBatchIndex + batchSize) % eligible.length;
+      const batch = uniqueSymbols.slice(currentBatchIndex, currentBatchIndex + batchSize);
+      currentBatchIndex = (currentBatchIndex + batchSize) % uniqueSymbols.length;
 
       const tf = activeOverviewTf || '1h';
       for (const sym of batch) {
         if (isBinanceCircuitBreakerActive()) break;
         await fetchAndStoreKlines(sym, tf, 150);
-        await new Promise(r => setTimeout(r, 250));
+        await new Promise(r => setTimeout(r, 200));
       }
     } catch {
       // ignore
     }
-  }, 4000);
+  }, 3000);
 }
 
 // Start background worker for progressive kline coverage
@@ -865,17 +878,18 @@ startRsiBackgroundWorker();
 
 function getRsiForSymbol(
   symbol: string,
-  timeframe: string,
-  tickerData?: { lastPrice: number; highPrice: number; lowPrice: number; priceChangePercent: number }
-): number {
+  timeframe: string
+): number | null {
   const tf = timeframe.toUpperCase();
   const cacheKey = `${symbol}:${tf}`;
 
   // 1. Check authoritative candleStore for requested timeframe
   const candles = candleStore.getCandles(symbol, tf.toLowerCase());
   if (candles && candles.length >= 30) {
-    // Do NOT inject live price — TradingView RSI uses closed candles only
-    const rsi = calculateRSI(candles, 14, { symbol, timeframe: tf, useClosedCandleOnly: true }).current;
+    // Full RMA on ALL candles — accurate convergence.
+    // TradingView Live Parity: current is the live forming bar RSI
+    const rsiRes = calculateRSI(candles, 14, { symbol, timeframe: tf });
+    const rsi = rsiRes.current;
     liveRsiCache.set(cacheKey, { rsi, updatedAt: Date.now() });
     return rsi;
   }
@@ -900,30 +914,20 @@ function getRsiForSymbol(
     return cached.rsi;
   }
 
-  // 4. Queue immediate background fetch for this symbol & timeframe with 200 candles
-  fetchAndStoreKlines(symbol, tf.toLowerCase(), 200).catch(() => {});
+  // 4. Queue immediate background fetch for this symbol & timeframe with 150 candles
+  fetchAndStoreKlines(symbol, tf.toLowerCase(), 150).catch(() => {});
 
   // 5. If requested timeframe is warming up, check if 1h authoritative candles exist
   if (tf.toLowerCase() !== '1h') {
     const candles1h = candleStore.getCandles(symbol, '1h');
     if (candles1h && candles1h.length >= 30) {
-      // Do NOT inject live price — use closed candles only like TradingView
-      const rsi1h = calculateRSI(candles1h, 14, { symbol, timeframe: '1H', useClosedCandleOnly: true }).current;
-      return rsi1h;
+      const rsiRes1h = calculateRSI(candles1h, 14, { symbol, timeframe: '1H' });
+      return rsiRes1h.current;
     }
   }
 
-  // 6. Fallback momentum estimation only while first network klines fetch resolves
-  if (tickerData) {
-    const { lastPrice, highPrice, lowPrice, priceChangePercent } = tickerData;
-    const range = highPrice - lowPrice;
-    const pos = range > 0 ? (lastPrice - lowPrice) / range : 0.5;
-    const bonus = Math.max(-28, Math.min(28, priceChangePercent * 0.65));
-    const estimated = Math.max(12, Math.min(94, 32 + pos * 36 + bonus));
-    return parseFloat(estimated.toFixed(1));
-  }
-
-  return 50.0;
+  // Strict TradingView Parity: NEVER return a fake fabricated estimate
+  return null;
 }
 
 let cachedOverview: CachedLiveOverview | null = null;
@@ -952,30 +956,26 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
     const usdtMap: Record<string, { price: number; change24h: number }> = {};
     const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];
 
-    // Filter ONLY real tradeable Binance spot pairs (all eligible Binance Spot USDT pairs)
+    // Filter ONLY real tradeable Binance spot pairs (excluding stablecoins)
     const rawTickers = Array.isArray(resp?.data) ? resp.data : [];
     const realPairs = rawTickers.filter((t: any) =>
       t &&
       t.symbol &&
       binanceDiscoveryService.isEligible(t.symbol) &&
+      !EXCLUDED_STABLECOINS.has(t.symbol.replace('USDT', '')) &&
       parseFloat(t.quoteVolume || '0') > 500 &&
       parseFloat(t.lastPrice || '0') > 0
     );
 
-    // Non-blocking gentle pre-warm for top mover if missing and circuit breaker is inactive
-    if (!isBinanceCircuitBreakerActive()) {
-      const topCandidates = [...realPairs]
-        .sort((a, b) => Math.abs(parseFloat(b.priceChangePercent)) - Math.abs(parseFloat(a.priceChangePercent)))
-        .slice(0, 5);
-
-      const missing = topCandidates.find(t => {
-        const c = candleStore.getCandles(t.symbol, tf.toLowerCase());
-        return !c || c.length < 15;
-      });
-
-      if (missing) {
-        fetchAndStoreKlines(missing.symbol, tf.toLowerCase(), 150).catch(() => {});
-      }
+    // Populate usdtMap and usdtList from realPairs
+    for (const t of realPairs) {
+      const cleanSym = t.symbol.replace('USDT', '');
+      const price = parseFloat(t.lastPrice);
+      const change24h = parseFloat(t.priceChangePercent);
+      const item = { price, change24h };
+      usdtMap[cleanSym] = item;
+      usdtMap[t.symbol] = item;
+      usdtList.push({ symbol: cleanSym, change24h, price });
     }
 
     const zones = {
@@ -989,25 +989,41 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
 
     const realCoinsList: RealBinanceCoin[] = [];
 
-    for (const t of realPairs) {
-      const cleanSym = t.symbol.replace('USDT', '');
+    // Candidate symbols to evaluate for heatmap zones:
+    // Core tracked symbols + top gainers + top losers + live scanner discovered coins
+    const topGainersSymbols = [...realPairs].sort((a, b) => parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent)).slice(0, 15).map(t => t.symbol);
+    const topLosersSymbols = [...realPairs].sort((a, b) => parseFloat(a.priceChangePercent) - parseFloat(b.priceChangePercent)).slice(0, 15).map(t => t.symbol);
+    const scannerCoins = [
+      ...(hiddenScannerService.getCachedScan()?.activeCoins.map(c => c.symbol) || []),
+      ...(hiddenScannerService.getCachedScan()?.signals.map(s => s.symbol) || []),
+      ...(v1ScannerService.getCachedScan()?.activeCoins.map(c => c.symbol) || []),
+      ...(v1ScannerService.getCachedScan()?.signals.map(s => s.symbol) || [])
+    ];
+
+    const symbolsToCategorize = Array.from(new Set([
+      ...DASHBOARD_TRACKED_SYMBOLS,
+      ...topGainersSymbols,
+      ...topLosersSymbols,
+      ...scannerCoins
+    ]));
+
+    for (const sym of symbolsToCategorize) {
+      const cleanSym = sym.replace('USDT', '');
+      if (EXCLUDED_STABLECOINS.has(cleanSym)) continue;
+
+      const t = realPairs.find((p: any) => p.symbol === sym);
+      if (!t) continue;
+
       const price = parseFloat(t.lastPrice);
       const change24h = parseFloat(t.priceChangePercent);
       const high = parseFloat(t.highPrice);
       const low = parseFloat(t.lowPrice);
       const volume = parseFloat(t.volume || '0');
       const quoteVolume = parseFloat(t.quoteVolume || '0');
-      const rsi = getRsiForSymbol(t.symbol, tf, {
-        lastPrice: price,
-        highPrice: high,
-        lowPrice: low,
-        priceChangePercent: change24h
-      });
 
-      const item = { price, change24h };
-      usdtMap[cleanSym] = item;
-      usdtMap[t.symbol] = item;
-      usdtList.push({ symbol: cleanSym, change24h, price });
+      // Authentic Wilder RSI from real candles (TradingView parity: 100% genuine)
+      const rsi = getRsiForSymbol(sym, tf);
+      if (rsi === null) continue; // STRICT: never place coin in zone without authentic candle RSI!
 
       const coinDto: HeatmapCoinDto = {
         symbol: cleanSym,
@@ -1039,6 +1055,22 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
         rsiTf: rsi
       });
     }
+
+    // Sort zones for clean intuitive display
+    zones.gainers.sort((a, b) => (b.rsiTf ?? b.rsi1H) - (a.rsiTf ?? a.rsi1H));
+    zones.v1.sort((a, b) => (b.rsiTf ?? b.rsi1H) - (a.rsiTf ?? a.rsi1H));
+    zones.neutral.sort((a, b) => (b.rsiTf ?? b.rsi1H) - (a.rsiTf ?? a.rsi1H));
+    zones.hiddenBull.sort((a, b) => (a.rsiTf ?? a.rsi1H) - (b.rsiTf ?? b.rsi1H));
+    zones.oversold.sort((a, b) => (a.rsiTf ?? a.rsi1H) - (b.rsiTf ?? b.rsi1H));
+    zones.extreme.sort((a, b) => (a.rsiTf ?? a.rsi1H) - (b.rsiTf ?? b.rsi1H));
+
+    // Limit each zone to at most 14 coins to keep dashboard responsive & focused
+    zones.gainers = zones.gainers.slice(0, 14);
+    zones.v1 = zones.v1.slice(0, 14);
+    zones.neutral = zones.neutral.slice(0, 14);
+    zones.hiddenBull = zones.hiddenBull.slice(0, 14);
+    zones.oversold = zones.oversold.slice(0, 14);
+    zones.extreme = zones.extreme.slice(0, 14);
 
     // Top 10 Gainers directly from real Binance 24hr tickers
     const topMovers = [...usdtList]
@@ -1106,8 +1138,9 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
       const candles = candleStore.getCandles(sym, tf.toLowerCase());
       const lastCandle = candles && candles.length > 0 ? candles[candles.length - 1] : null;
       const price = lastCandle ? lastCandle.close : 1.0;
-      // useClosedCandleOnly=true: matches TradingView RSI exactly (closed bars only)
-      const rsi = candles && candles.length >= 15 ? calculateRSI(candles, 14, { symbol: sym, timeframe: tf, useClosedCandleOnly: true }).current : 50.0;
+      // Full RMA on ALL candles (TradingView live badge parity)
+      const rsiResult = candles && candles.length >= 15 ? calculateRSI(candles, 14, { symbol: sym, timeframe: tf }) : null;
+      const rsi = rsiResult ? rsiResult.current : 50.0;
       const change24h = 0.0;
 
       fallbackTickers[cleanSym] = { price, change24h };
@@ -1200,6 +1233,7 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
         t &&
         t.symbol &&
         t.symbol.endsWith('USDT') &&
+        !EXCLUDED_STABLECOINS.has(t.symbol.replace('USDT', '')) &&
         !t.symbol.includes('UP') &&
         !t.symbol.includes('DOWN') &&
         !t.symbol.includes('BEAR') &&
@@ -1232,20 +1266,22 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
         usdtMap[t.symbol] = usdtMap[clean];
         usdtList.push({ symbol: clean, change24h: chg, price: p });
 
-        const coinDto: HeatmapCoinDto = {
-          symbol: clean,
-          rsi1H: rsi,
-          change24h: parseFloat(chg.toFixed(2)),
-          price: p,
-          hasWarning: Math.abs(chg) > 25
-        };
+        if (rsi !== null) {
+          const coinDto: HeatmapCoinDto = {
+            symbol: clean,
+            rsi1H: rsi,
+            change24h: parseFloat(chg.toFixed(2)),
+            price: p,
+            hasWarning: Math.abs(chg) > 25
+          };
 
-        if (rsi >= 60) zones.gainers.push(coinDto);
-        else if (rsi >= 50) zones.v1.push(coinDto);
-        else if (rsi >= 40) zones.neutral.push(coinDto);
-        else if (rsi >= 30) zones.hiddenBull.push(coinDto);
-        else if (rsi >= 20) zones.oversold.push(coinDto);
-        else zones.extreme.push(coinDto);
+          if (rsi >= 60) zones.gainers.push(coinDto);
+          else if (rsi >= 50) zones.v1.push(coinDto);
+          else if (rsi >= 40) zones.neutral.push(coinDto);
+          else if (rsi >= 30) zones.hiddenBull.push(coinDto);
+          else if (rsi >= 20) zones.oversold.push(coinDto);
+          else zones.extreme.push(coinDto);
+        }
 
         realCoinsList.push({
           symbol: t.symbol,
@@ -1297,17 +1333,19 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
     const change24h = coin.change24h;
     const isUp = change24h > 0;
 
-    // Genuine multi-timeframe RSI calculation from authentic Binance candles
+    // Genuine multi-timeframe RSI — full Wilder RMA on ALL candles, closedCandleRsi for TV parity
     const candles1H = candleStore.getCandles(sym, '1h');
     const candles30M = candleStore.getCandles(sym, '30m');
 
-    const rsi1H = candles1H && candles1H.length >= 15
-      ? calculateRSI(candles1H, 14, { symbol: sym, timeframe: '1h', useClosedCandleOnly: true }).current
-      : coin.rsi1H;
+    const rsi1HRes = candles1H && candles1H.length >= 15
+      ? calculateRSI(candles1H, 14, { symbol: sym, timeframe: '1h' })
+      : null;
+    const rsi1H = rsi1HRes ? rsi1HRes.current : (coin.rsi1H ?? 50.0);
 
-    const rsi30M = candles30M && candles30M.length >= 15
-      ? calculateRSI(candles30M, 14, { symbol: sym, timeframe: '30m', useClosedCandleOnly: true }).current
-      : rsi1H;
+    const rsi30MRes = candles30M && candles30M.length >= 15
+      ? calculateRSI(candles30M, 14, { symbol: sym, timeframe: '30m' })
+      : null;
+    const rsi30M = rsi30MRes ? rsi30MRes.current : rsi1H;
 
     // 1. Order Block Strategy: 1H Bullish demand zone with 15M retest & bounce
     const hasValidOB = (rsi1H >= 50 && rsi1H <= 62) && (change24h >= 0.8 && change24h <= 24.0);
@@ -1454,12 +1492,11 @@ apiRouter.get('/market/coin/:symbol', async (req: Request, res: Response) => {
   const liquidity = await coinGlassService.getLiquidityData(sym, currentPrice, '24h');
   const strategiesEvaluation = await strategyRegistry.evaluateAllStrategiesForSymbol(sym);
 
-  // RSI computed from closed candles only — matches TradingView's displayed RSI exactly
-  const rsiOpts = { useClosedCandleOnly: true };
-  const rsi1h = calculateRSI(data.candles1h, 14, { symbol: sym, timeframe: '1h', ...rsiOpts });
-  const rsi30m = calculateRSI(data.candles30m, 14, { symbol: sym, timeframe: '30m', ...rsiOpts });
-  const rsi15m = calculateRSI(data.candles15m, 14, { symbol: sym, timeframe: '15m', ...rsiOpts });
-  const rsi1d = calculateRSI(data.candles1d, 14, { symbol: sym, timeframe: '1d', ...rsiOpts });
+  // Authentic Wilder RMA RSI on all candles (TradingView Live Parity)
+  const rsi1h = calculateRSI(data.candles1h, 14, { symbol: sym, timeframe: '1h' });
+  const rsi30m = calculateRSI(data.candles30m, 14, { symbol: sym, timeframe: '30m' });
+  const rsi15m = calculateRSI(data.candles15m, 14, { symbol: sym, timeframe: '15m' });
+  const rsi1d = calculateRSI(data.candles1d, 14, { symbol: sym, timeframe: '1d' });
   const divergence = detectHiddenBullishDivergence(data.candles1h);
 
   const tradingViewUrl = `https://www.tradingview.com/chart/?symbol=BINANCE%3A${sym}&interval=60`;

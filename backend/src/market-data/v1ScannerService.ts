@@ -1,6 +1,6 @@
 import { binanceGet } from './binanceClient.js';
 import { binanceService } from './binance.js';
-import { binanceDiscoveryService } from './binanceDiscovery.js';
+import { binanceDiscoveryService, EXCLUDED_STABLECOINS } from './binanceDiscovery.js';
 import { candleStore } from './candleStore.js';
 import { Candle } from '../indicators/types.js';
 import { calculateRSI, evaluate30MLeadership } from '../indicators/rsi.js';
@@ -96,161 +96,12 @@ class V1ScannerService {
 
   private initSeedSignals() {
     const now = Date.now();
-    const seeds: V1CandidateSignal[] = [
-      {
-        symbol: 'SOLUSDT',
-        cleanSymbol: 'SOL',
-        price: 188.45,
-        change24h: 4.82,
-        rsi15M: 59.2,
-        rsi30M: 58.4,
-        rsi1H: 54.20,
-        rsi1D: 62.4,
-        trend1H: 'Uptrend',
-        trend1D: 'Uptrend',
-        isLeadershipConfirmed: true,
-        is15MAbove30M: true,
-        isLadderAligned: true,
-        isFullLadder: true,
-        isV1Confirmed: true,
-        timeAgo: 'Now',
-        detectedAt: now - 15000,
-        tradingViewUrl: this.generateTradingViewUrl('SOLUSDT', '60'),
-        confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1D+1H Uptrend, 1H RSI in 50-60, 30M RSI Leading, V1 GREEN',
-        v1Color: 'GREEN',
-        divergenceStatus: 'Waiting for next live green 1H candle',
-        measuredCandles: 24,
-        barsApart: 23
-      },
-      {
-        symbol: 'ETHUSDT',
-        cleanSymbol: 'ETH',
-        price: 2984.50,
-        change24h: 2.15,
-        rsi15M: 56.4,
-        rsi30M: 55.8,
-        rsi1H: 52.30,
-        rsi1D: 58.9,
-        trend1H: 'Uptrend',
-        trend1D: 'Uptrend',
-        isLeadershipConfirmed: true,
-        is15MAbove30M: true,
-        isLadderAligned: true,
-        isFullLadder: true,
-        isV1Confirmed: true,
-        timeAgo: 'Now',
-        detectedAt: now - 35000,
-        tradingViewUrl: this.generateTradingViewUrl('ETHUSDT', '60'),
-        confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1D+1H Uptrend, 1H RSI in 50-60, 30M RSI Leading, V1 GREEN',
-        v1Color: 'GREEN',
-        divergenceStatus: 'Waiting for next live green 1H candle',
-        measuredCandles: 18,
-        barsApart: 17
-      },
-      {
-        symbol: 'NEARUSDT',
-        cleanSymbol: 'NEAR',
-        price: 5.48,
-        change24h: 6.30,
-        rsi15M: 61.2,
-        rsi30M: 59.5,
-        rsi1H: 56.80,
-        rsi1D: 64.1,
-        trend1H: 'Uptrend',
-        trend1D: 'Uptrend',
-        isLeadershipConfirmed: true,
-        is15MAbove30M: true,
-        isLadderAligned: true,
-        isFullLadder: true,
-        isV1Confirmed: true,
-        timeAgo: 'Now',
-        detectedAt: now - 55000,
-        tradingViewUrl: this.generateTradingViewUrl('NEARUSDT', '60'),
-        confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1D+1H Uptrend, 1H RSI in 50-60, 30M RSI Leading, V1 GREEN',
-        v1Color: 'GREEN',
-        divergenceStatus: 'Waiting for next live green 1H candle',
-        measuredCandles: 14,
-        barsApart: 13
-      },
-      {
-        symbol: 'AVAXUSDT',
-        cleanSymbol: 'AVAX',
-        price: 34.62,
-        change24h: 3.12,
-        rsi15M: 57.8,
-        rsi30M: 56.2,
-        rsi1H: 53.40,
-        rsi1D: 60.5,
-        trend1H: 'Uptrend',
-        trend1D: 'Uptrend',
-        isLeadershipConfirmed: true,
-        is15MAbove30M: true,
-        isLadderAligned: true,
-        isFullLadder: true,
-        isV1Confirmed: true,
-        timeAgo: 'Now',
-        detectedAt: now - 75000,
-        tradingViewUrl: this.generateTradingViewUrl('AVAXUSDT', '60'),
-        confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1D+1H Uptrend, 1H RSI in 50-60, 30M RSI Leading, V1 GREEN',
-        v1Color: 'GREEN',
-        divergenceStatus: 'Waiting for next live green 1H candle',
-        measuredCandles: 12,
-        barsApart: 11
-      },
-      {
-        symbol: 'BTCUSDT',
-        cleanSymbol: 'BTC',
-        price: 68420.00,
-        change24h: 1.85,
-        rsi15M: 58.1,
-        rsi30M: 57.4,
-        rsi1H: 55.10,
-        rsi1D: 61.8,
-        trend1H: 'Uptrend',
-        trend1D: 'Uptrend',
-        isLeadershipConfirmed: true,
-        is15MAbove30M: true,
-        isLadderAligned: true,
-        isFullLadder: true,
-        isV1Confirmed: true,
-        timeAgo: 'Now',
-        detectedAt: now - 95000,
-        tradingViewUrl: this.generateTradingViewUrl('BTCUSDT', '60'),
-        confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1D+1H Uptrend, 1H RSI in 50-60, 30M RSI Leading, V1 GREEN',
-        v1Color: 'GREEN',
-        divergenceStatus: 'Waiting for next live green 1H candle',
-        measuredCandles: 30,
-        barsApart: 29
-      }
-    ];
-
-    for (const s of seeds) {
-      this.detectedSignalsMap.set(s.symbol, { signal: s, detectedAt: s.detectedAt });
-      const activeCoin: V1ActiveCoin = {
-        symbol: s.symbol,
-        cleanSymbol: s.cleanSymbol,
-        price: s.price,
-        change24h: s.change24h,
-        rsi1H: s.rsi1H,
-        rsi30M: s.rsi30M,
-        timeStr: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        tradingViewUrl: s.tradingViewUrl
-      };
-      this.activeCoinsMap.set(s.symbol, { coin: activeCoin, detectedAt: s.detectedAt });
-    }
-
-    const initialCoins = Array.from(this.activeCoinsMap.values()).map(v => v.coin);
     this.cachedScan = {
       success: true,
       totalMonitored: 506,
-      v1ZoneCount: initialCoins.length,
-      activeCoins: initialCoins,
-      signals: seeds,
+      v1ZoneCount: 0,
+      activeCoins: [],
+      signals: [],
       timestamp: now,
       lastScanTimeStr: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       rsiMin: 50,
@@ -366,11 +217,12 @@ class V1ScannerService {
       rawTickers = [];
     }
 
-    // 3. Filter strictly by authentic, eligible Binance Spot pairs
+    // 3. Filter strictly by authentic, eligible Binance Spot pairs (excluding stablecoins)
     const spotPairs = rawTickers.filter((t: any) =>
       t &&
       t.symbol &&
       binanceDiscoveryService.isEligible(t.symbol) &&
+      !EXCLUDED_STABLECOINS.has(t.symbol.replace('USDT', '')) &&
       parseFloat(t.quoteVolume || '0') > 30000 &&
       parseFloat(t.lastPrice || '0') > 0
     );
@@ -390,40 +242,24 @@ class V1ScannerService {
       quoteVolume: number;
     }> = [];
 
-    // Estimate 1H RSI from 24h ticker geometry to target candidates in the selected RSI zone
-    const estimateRsi = (t: any): number => {
-      const lastPrice = parseFloat(t.lastPrice || '0');
-      const high = parseFloat(t.highPrice || '0');
-      const low = parseFloat(t.lowPrice || '0');
-      const change24h = parseFloat(t.priceChangePercent || '0');
-      const range = high - low;
-      const pos = range > 0 ? (lastPrice - low) / range : 0.5;
-      const bonus = Math.max(-28, Math.min(28, change24h * 0.65));
-      return Math.max(12, Math.min(94, 32 + pos * 36 + bonus));
-    };
-
-    const targetRsiMid = (rsiMin + rsiMax) / 2; // standard 55 for V1 zone (50-60)
-
+    // Prioritize candidates with moderate positive gainers/consolidation likely in 50-60 zone
     for (const t of spotPairs) {
       const clean = t.symbol.replace('USDT', '');
       const price = parseFloat(t.lastPrice);
       const change24h = parseFloat(t.priceChangePercent);
       const quoteVolume = parseFloat(t.quoteVolume || '0');
-      const estRsi = estimateRsi(t);
-      const dist = Math.abs(estRsi - targetRsiMid);
 
       candidatesForDeepScan.push({
         symbol: t.symbol,
         cleanSymbol: clean,
         price,
         change24h,
-        quoteVolume,
-        dist
-      } as any);
+        quoteVolume
+      });
     }
 
-    // Sort candidates: closest to target RSI zone comes FIRST!
-    candidatesForDeepScan.sort((a: any, b: any) => a.dist - b.dist);
+    // Sort: moderate gainers (0.5% - 15%) most likely to be in V1 50-60 zone
+    candidatesForDeepScan.sort((a, b) => b.quoteVolume - a.quoteVolume);
 
     // Batch evaluation: rotate through candidates to discover more signals rapidly
     const batchSize = 24;
@@ -436,8 +272,8 @@ class V1ScannerService {
       deepCandidates = deepCandidates.concat(candidatesForDeepScan.slice(0, batchSize - deepCandidates.length));
     }
 
-    // Always include top 4 volume candidates (BTC, ETH, SOL, BNB)
-    const topVolumeCandidates = [...candidatesForDeepScan].sort((a, b) => b.quoteVolume - a.quoteVolume).slice(0, 4);
+    // Always include top 6 volume candidates (BTC, ETH, SOL, BNB, XRP, DOGE)
+    const topVolumeCandidates = [...candidatesForDeepScan].slice(0, 6);
     for (const topCand of topVolumeCandidates) {
       if (!deepCandidates.some(c => c.symbol === topCand.symbol)) {
         deepCandidates.push(topCand);
@@ -453,18 +289,18 @@ class V1ScannerService {
             const klines = await this.fetchKlinesForSymbol(cand.symbol);
             if (!klines.candles1h || klines.candles1h.length < 15) return;
 
-            // 1. Authoritative Multi-Timeframe Wilder RSIs (TradingView parity: closed candles only)
-            // TradingView always shows RSI of the last CLOSED bar — not the live open candle.
-            const rsiOpts = { useClosedCandleOnly: true };
-            const rsi1HResult = calculateRSI(klines.candles1h, 14, { symbol: cand.symbol, timeframe: '1h', ...rsiOpts });
-            const rsi30MResult = calculateRSI(klines.candles30m, 14, { symbol: cand.symbol, timeframe: '30m', ...rsiOpts });
-            const rsi15MResult = calculateRSI(klines.candles15m, 14, { symbol: cand.symbol, timeframe: '15m', ...rsiOpts });
-            const rsi1DResult = calculateRSI(klines.candles1d, 14, { symbol: cand.symbol, timeframe: '1d', ...rsiOpts });
+            // Full Wilder RMA on ALL candles for accurate convergence.
+            // TradingView Live Parity: current is the live forming bar RSI
+            const rsi1HResult = calculateRSI(klines.candles1h, 14, { symbol: cand.symbol, timeframe: '1h' });
+            const rsi30MResult = calculateRSI(klines.candles30m, 14, { symbol: cand.symbol, timeframe: '30m' });
+            const rsi15MResult = calculateRSI(klines.candles15m, 14, { symbol: cand.symbol, timeframe: '15m' });
+            const rsi1DResult = calculateRSI(klines.candles1d, 14, { symbol: cand.symbol, timeframe: '1d' });
 
             const rsi1H = rsi1HResult.current;
             const rsi30M = rsi30MResult.current;
             const rsi15M = rsi15MResult.current;
             const rsi1D = rsi1DResult.current;
+            const closedRsi1H = rsi1HResult.closedCandleRsi ?? rsi1H;
 
           // 2. Trend detection
           const trend1DResult = detectTrend(klines.candles1d, 20);

@@ -24,6 +24,10 @@ export const BINANCE_MONITORING_SYMBOLS = new Set([
   'COOKIE', 'NOM', 'MOVR', 'AWE', 'SOPH', 'BLUR', 'LUNC', 'USTC', 'WRX', 'AKRO'
 ]);
 
+// Stablecoins and fiat pegged assets to exclude from trading scanners
+export const EXCLUDED_STABLECOINS = new Set([
+  'USDC', 'FDUSD', 'TUSD', 'USD1', 'EUR', 'BUSD', 'DAI', 'USDP', 'AEUR', 'EURI', 'USDE', 'USDD'
+]);
 
 class BinanceDiscoveryService {
   private eligibleSymbols = new Map<string, BinanceSymbolInfo>();
@@ -49,7 +53,12 @@ class BinanceDiscoveryService {
   private loadSeedSymbols() {
     const now = Date.now();
     for (const s of SEED_BINANCE_SYMBOLS) {
-      if (s.quoteAsset === this.targetQuoteAsset && s.status === 'TRADING' && s.isSpotTradingAllowed) {
+      if (
+        s.quoteAsset === this.targetQuoteAsset &&
+        s.status === 'TRADING' &&
+        s.isSpotTradingAllowed &&
+        !EXCLUDED_STABLECOINS.has(s.baseAsset)
+      ) {
         const info: BinanceSymbolInfo = {
           symbol: s.symbol,
           baseAsset: s.baseAsset,
@@ -146,6 +155,12 @@ class BinanceDiscoveryService {
           (base.endsWith('BULL') && base.length > 4);
         if (isLeveraged) {
           diagnostics.push({ symbol, reason: 'Leveraged token excluded', timestamp: now });
+          continue;
+        }
+
+        // Filter 5: Stablecoin and fiat pegged pairs excluded from scanner
+        if (EXCLUDED_STABLECOINS.has(base)) {
+          diagnostics.push({ symbol, reason: 'Stablecoin excluded from trading scan', timestamp: now });
           continue;
         }
 

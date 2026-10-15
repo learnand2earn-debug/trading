@@ -43,9 +43,8 @@ export function evaluateICTMethod(
     reason: trendNotSideways ? `1H Trend is ${trend1H.direction}` : '1H Trend is SIDEWAYS (Rejected by ICT source rules)'
   });
 
-  // Condition 2: 1H RSI in Zone 30-40 (TradingView Parity: closed candles only)
-  // TradingView RSI = Wilder RMA on closed candles only — never the live open bar.
-  const rsi1H = calculateRSI(candles1H, 14, { symbol, timeframe: '1h', useClosedCandleOnly: true });
+  // Condition 2: 1H RSI in Zone 30-40 (TradingView Parity)
+  const rsi1H = calculateRSI(candles1H, 14, { symbol, timeframe: '1h' });
   const liveRsi = rsi1H.current;
   const closedRsi = rsi1H.closedCandleRsi ?? liveRsi;
   const rsiValid = (liveRsi >= config.rsiMin && liveRsi <= config.rsiMax) ||

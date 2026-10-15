@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { apiRouter } from './routes/api.js';
+import { apiRouter, DASHBOARD_TRACKED_SYMBOLS } from './routes/api.js';
 import { getDb } from './database/db.js';
 import { eventBus } from './core/events.js';
 import { binanceService } from './market-data/binance.js';
@@ -108,11 +108,8 @@ eventBus.subscribe('*', (ev) => {
 
 // Autonomous 24H Scanner Loop
 async function startAutomatedScannerLoop() {
-  // Core symbols — always monitored
-  const coreSymbols = [
-    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT',
-    'AVAXUSDT', 'LINKUSDT', 'BNBUSDT', 'ADAUSDT', 'NEARUSDT'
-  ];
+  // Core symbols — always monitored (All 32 dashboard core symbols)
+  const coreSymbols = [...DASHBOARD_TRACKED_SYMBOLS];
 
   // Dynamically fetch top Binance gainers if rate limits permit
   let symbols = [...coreSymbols];
@@ -122,7 +119,7 @@ async function startAutomatedScannerLoop() {
       const gainersSymbols = topGainers
         .map(t => t.symbol)
         .filter(s => !symbols.includes(s) && s.endsWith('USDT'));
-      symbols = [...symbols, ...gainersSymbols].slice(0, 30);
+      symbols = [...symbols, ...gainersSymbols].slice(0, 50);
     } catch (e) {
       console.warn('[Scanner] Notice: Using core symbols for surveillance');
     }

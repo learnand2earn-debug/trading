@@ -67,7 +67,8 @@ const getLocalTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
   );
 };
 
-const DEFAULT_V1_SIGNALS: V1CandidateSignal[] = [
+const DEFAULT_V1_SIGNALS: V1CandidateSignal[] = [];
+const _UNUSED_DEFAULT_V1_SIGNALS: V1CandidateSignal[] = [
   {
     symbol: 'SOLUSDT',
     cleanSymbol: 'SOL',
@@ -200,7 +201,10 @@ const DEFAULT_V1_SIGNALS: V1CandidateSignal[] = [
   }
 ];
 
-const FAKE_SYMBOLS = new Set(['SNXXBUSDT', 'MUBUSDT', 'MUUBUSDT', 'AXTIBUSDT', 'HYPEUSDT']);
+const FAKE_SYMBOLS = new Set([
+  'SNXXBUSDT', 'MUBUSDT', 'MUUBUSDT', 'AXTIBUSDT', 'HYPEUSDT',
+  'USD1USDT', 'USDCUSDT', 'FDUSDUSDT', 'TUSDUSDT', 'EURUSDT', 'DAIUSDT', 'USDPUSDT', 'AEURUSDT', 'EURIUSDT', 'USDEUSDT', 'USDDUSDT', 'BUSDUSDT'
+]);
 
 const getInitialV1Signals = () => {
   try {

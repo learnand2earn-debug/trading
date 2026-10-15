@@ -32,10 +32,8 @@ export function evaluateHiddenBullish(
   const conditions: StrategyConditionCheck[] = [];
   const currentPrice = candles1H.length > 0 ? candles1H[candles1H.length - 1].close : 0;
 
-  // Condition 1: 1H RSI in Buying Zone 30-40 (TradingView parity: closed candles only)
-  // TradingView RSI is always computed on the last CLOSED candle — never on the live open bar.
-  const rsiOpts = { useClosedCandleOnly: true };
-  const rsi1H = calculateRSI(candles1H, 14, { symbol, timeframe: '1h', ...rsiOpts });
+  // Condition 1: 1H RSI in Buying Zone 30-40 (TradingView Parity)
+  const rsi1H = calculateRSI(candles1H, 14, { symbol, timeframe: '1h' });
   const liveRsi = rsi1H.current;
   const closedRsi = rsi1H.closedCandleRsi ?? liveRsi;
   const rsiInZone = isRSIInZone(liveRsi, config.rsiMin, config.rsiMax) || isRSIInZone(closedRsi, config.rsiMin, config.rsiMax);
@@ -60,7 +58,7 @@ export function evaluateHiddenBullish(
   });
 
   // Condition 3: 30M RSI Leadership (30M RSI strictly above 1H RSI)
-  const rsi30M = calculateRSI(candles30M, 14, { symbol, timeframe: '30m', ...rsiOpts });
+  const rsi30M = calculateRSI(candles30M, 14, { symbol, timeframe: '30m' });
   const leadership = evaluate30MLeadership(rsi1H, rsi30M);
   const isAbove = rsi30M.current > rsi1H.current;
   const leadPassed = isAbove || leadership.leads;

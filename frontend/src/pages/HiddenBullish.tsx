@@ -66,9 +66,13 @@ const getLocalTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
   );
 };
 
-const FAKE_SYMBOLS = new Set(['SNXXBUSDT', 'MUBUSDT', 'MUUBUSDT', 'AXTIBUSDT', 'HYPEUSDT']);
+const FAKE_SYMBOLS = new Set([
+  'SNXXBUSDT', 'MUBUSDT', 'MUUBUSDT', 'AXTIBUSDT', 'HYPEUSDT',
+  'USD1USDT', 'USDCUSDT', 'FDUSDUSDT', 'TUSDUSDT', 'EURUSDT', 'DAIUSDT', 'USDPUSDT', 'AEURUSDT', 'EURIUSDT', 'USDEUSDT', 'USDDUSDT', 'BUSDUSDT'
+]);
 
-const DEFAULT_HIDDEN_SIGNALS: HiddenCandidateSignal[] = [
+const DEFAULT_HIDDEN_SIGNALS: HiddenCandidateSignal[] = [];
+const _UNUSED_DEFAULT_SIGNALS: HiddenCandidateSignal[] = [
   {
     symbol: 'SCRTUSDT',
     cleanSymbol: 'SCRT',

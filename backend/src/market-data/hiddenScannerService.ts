@@ -1,6 +1,6 @@
 import { binanceGet } from './binanceClient.js';
 import { binanceService } from './binance.js';
-import { binanceDiscoveryService } from './binanceDiscovery.js';
+import { binanceDiscoveryService, EXCLUDED_STABLECOINS } from './binanceDiscovery.js';
 import { candleStore } from './candleStore.js';
 import { Candle, DivergencePivot } from '../indicators/types.js';
 import { calculateRSI, evaluate30MLeadership, isRSIConsolidating } from '../indicators/rsi.js';
@@ -98,200 +98,12 @@ class HiddenScannerService {
 
   private initSeedSignals() {
     const now = Date.now();
-    // Real Binance Spot coins currently verified in the 30-40 1H RSI zone
-    const seeds: HiddenCandidateSignal[] = [
-      {
-        symbol: 'SCRTUSDT',
-        cleanSymbol: 'SCRT',
-        price: 0.0071,
-        change24h: -22.8,
-        rsi15M: 38.2,
-        rsi30M: 38.9,
-        rsi1H: 39.15,
-        closedCandleRsi: 37.72,
-        prevRsi1H: 37.72,
-        rsi1D: 34.5,
-        isConsolidating: true,
-        is30MLeading: true,
-        isHBConfirmed: true,
-        timeAgo: 'Now',
-        detectedAt: now - 15000,
-        tradingViewUrl: this.generateTradingViewUrl('SCRTUSDT', '60'),
-        confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40 (39.15), 1H Consolidation, 30M Lead',
-        divergenceDetected: true,
-        measuredCandles: 18,
-        priceLow1: 0.0074,
-        priceLow2: 0.0071,
-        rsiLow1: 36.80,
-        rsiLow2: 39.15,
-        barsApart: 17,
-        divergenceStatus: 'Waiting for next live green 1H candle'
-      },
-      {
-        symbol: 'SOPHUSDT',
-        cleanSymbol: 'SOPH',
-        price: 0.00251,
-        change24h: -18.5,
-        rsi15M: 35.1,
-        rsi30M: 35.6,
-        rsi1H: 34.73,
-        closedCandleRsi: 35.74,
-        prevRsi1H: 35.74,
-        rsi1D: 33.8,
-        isConsolidating: true,
-        is30MLeading: true,
-        isHBConfirmed: true,
-        timeAgo: 'Now',
-        detectedAt: now - 35000,
-        tradingViewUrl: this.generateTradingViewUrl('SOPHUSDT', '60'),
-        confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40 (34.73), 1H Consolidation, 30M Lead',
-        divergenceDetected: true,
-        measuredCandles: 22,
-        priceLow1: 0.00262,
-        priceLow2: 0.00251,
-        rsiLow1: 33.10,
-        rsiLow2: 34.73,
-        barsApart: 21,
-        divergenceStatus: 'Waiting for next live green 1H candle'
-      },
-      {
-        symbol: 'DATAUSDT',
-        cleanSymbol: 'DATA',
-        price: 0.00088,
-        change24h: -31.2,
-        rsi15M: 32.4,
-        rsi30M: 33.1,
-        rsi1H: 30.96,
-        closedCandleRsi: 33.86,
-        prevRsi1H: 33.86,
-        rsi1D: 29.4,
-        isConsolidating: true,
-        is30MLeading: true,
-        isHBConfirmed: true,
-        timeAgo: 'Now',
-        detectedAt: now - 55000,
-        tradingViewUrl: this.generateTradingViewUrl('DATAUSDT', '60'),
-        confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40 (30.96), 1H Consolidation, 30M Lead',
-        divergenceDetected: true,
-        measuredCandles: 14,
-        priceLow1: 0.00095,
-        priceLow2: 0.00088,
-        rsiLow1: 29.50,
-        rsiLow2: 30.96,
-        barsApart: 13,
-        divergenceStatus: 'Waiting for next live green 1H candle'
-      },
-      {
-        symbol: 'MBOXUSDT',
-        cleanSymbol: 'MBOX',
-        price: 0.0021,
-        change24h: -16.0,
-        rsi15M: 31.8,
-        rsi30M: 32.4,
-        rsi1H: 30.22,
-        closedCandleRsi: 32.16,
-        prevRsi1H: 32.16,
-        rsi1D: 31.0,
-        isConsolidating: true,
-        is30MLeading: true,
-        isHBConfirmed: true,
-        timeAgo: 'Now',
-        detectedAt: now - 80000,
-        tradingViewUrl: this.generateTradingViewUrl('MBOXUSDT', '60'),
-        confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40 (30.22), 1H Consolidation, 30M Lead',
-        divergenceDetected: true,
-        measuredCandles: 16,
-        priceLow1: 0.00224,
-        priceLow2: 0.0021,
-        rsiLow1: 28.90,
-        rsiLow2: 30.22,
-        barsApart: 15,
-        divergenceStatus: 'Waiting for next live green 1H candle'
-      },
-      {
-        symbol: 'PONDUSDT',
-        cleanSymbol: 'POND',
-        price: 0.00081,
-        change24h: -18.2,
-        rsi15M: 31.5,
-        rsi30M: 31.9,
-        rsi1H: 30.79,
-        closedCandleRsi: 30.79,
-        prevRsi1H: 30.79,
-        rsi1D: 32.1,
-        isConsolidating: true,
-        is30MLeading: true,
-        isHBConfirmed: true,
-        timeAgo: 'Now',
-        detectedAt: now - 110000,
-        tradingViewUrl: this.generateTradingViewUrl('PONDUSDT', '60'),
-        confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40 (30.79), 1H Consolidation, 30M Lead',
-        divergenceDetected: true,
-        measuredCandles: 20,
-        priceLow1: 0.00086,
-        priceLow2: 0.00081,
-        rsiLow1: 29.80,
-        rsiLow2: 30.79,
-        barsApart: 19,
-        divergenceStatus: 'Waiting for next live green 1H candle'
-      },
-      {
-        symbol: 'DFUSDT',
-        cleanSymbol: 'DF',
-        price: 0.00164,
-        change24h: -17.6,
-        rsi15M: 32.8,
-        rsi30M: 33.2,
-        rsi1H: 31.05,
-        closedCandleRsi: 34.47,
-        prevRsi1H: 34.47,
-        rsi1D: 30.5,
-        isConsolidating: true,
-        is30MLeading: true,
-        isHBConfirmed: true,
-        timeAgo: 'Now',
-        detectedAt: now - 130000,
-        tradingViewUrl: this.generateTradingViewUrl('DFUSDT', '60'),
-        confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40 (31.05), 1H Consolidation, 30M Lead',
-        divergenceDetected: true,
-        measuredCandles: 12,
-        priceLow1: 0.00175,
-        priceLow2: 0.00164,
-        rsiLow1: 30.10,
-        rsiLow2: 31.05,
-        barsApart: 11,
-        divergenceStatus: 'Waiting for next live green 1H candle'
-      }
-    ];
-
-    for (const s of seeds) {
-      this.detectedSignalsMap.set(s.symbol, { signal: s, detectedAt: s.detectedAt });
-      const activeCoin: HiddenActiveCoin = {
-        symbol: s.symbol,
-        cleanSymbol: s.cleanSymbol,
-        price: s.price,
-        change24h: s.change24h,
-        rsi1H: s.rsi1H,
-        rsi30M: s.rsi30M,
-        timeStr: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        tradingViewUrl: s.tradingViewUrl
-      };
-      this.activeCoinsMap.set(s.symbol, { coin: activeCoin, detectedAt: s.detectedAt });
-    }
-
-    const initialCoins = Array.from(this.activeCoinsMap.values()).map(v => v.coin);
     this.cachedScan = {
       success: true,
       totalMonitored: 506,
-      activeCount: initialCoins.length,
-      activeCoins: initialCoins,
-      signals: seeds,
+      activeCount: 0,
+      activeCoins: [],
+      signals: [],
       timestamp: now,
       lastScanTimeStr: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       rsiMin: 30,
@@ -407,11 +219,12 @@ class HiddenScannerService {
       rawTickers = [];
     }
 
-    // 3. Filter strictly by authentic, eligible Binance Spot pairs
+    // 3. Filter strictly by authentic, eligible Binance Spot pairs (excluding stablecoins)
     const spotPairs = rawTickers.filter((t: any) =>
       t &&
       t.symbol &&
       binanceDiscoveryService.isEligible(t.symbol) &&
+      !EXCLUDED_STABLECOINS.has(t.symbol.replace('USDT', '')) &&
       parseFloat(t.quoteVolume || '0') > 30000 &&
       parseFloat(t.lastPrice || '0') > 0
     );
@@ -483,17 +296,15 @@ class HiddenScannerService {
             const klines = await this.fetchKlinesForSymbol(cand.symbol);
             if (!klines.candles1h || klines.candles1h.length < 50) return;
 
-            // 1. Authoritative Wilder RSI calculations matching TradingView
-            // TradingView RSI always uses CLOSED candles only (completed bars)
-            // useClosedCandleOnly=true ensures we exclude the live open candle,
-            // exactly matching TradingView's RSI display.
-            const rsiOpts = { useClosedCandleOnly: true };
-            const rsi1HResult = calculateRSI(klines.candles1h, 14, { symbol: cand.symbol, timeframe: '1h', ...rsiOpts });
-            const rsi30MResult = calculateRSI(klines.candles30m, 14, { symbol: cand.symbol, timeframe: '30m', ...rsiOpts });
-            const rsi15MResult = calculateRSI(klines.candles15m, 14, { symbol: cand.symbol, timeframe: '15m', ...rsiOpts });
-            const rsi1DResult = calculateRSI(klines.candles1d, 14, { symbol: cand.symbol, timeframe: '1d', ...rsiOpts });
+            // Full Wilder RMA on ALL candles (150-200 bars) for accurate convergence.
+            // liveRsi1H = current bar RSI (matches TradingView live badge exactly)
+            // closedRsi1H = last closed bar RSI
+            const rsi1HResult = calculateRSI(klines.candles1h, 14, { symbol: cand.symbol, timeframe: '1h' });
+            const rsi30MResult = calculateRSI(klines.candles30m, 14, { symbol: cand.symbol, timeframe: '30m' });
+            const rsi15MResult = calculateRSI(klines.candles15m, 14, { symbol: cand.symbol, timeframe: '15m' });
+            const rsi1DResult = calculateRSI(klines.candles1d, 14, { symbol: cand.symbol, timeframe: '1d' });
 
-            // All values now come from the last CLOSED candle — matches TradingView 1:1
+            // TradingView Live Parity: current is the live forming bar RSI
             const liveRsi1H = rsi1HResult.current;
             const closedRsi1H = rsi1HResult.closedCandleRsi ?? liveRsi1H;
             const prevRsi1H = rsi1HResult.previous;

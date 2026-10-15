@@ -32,68 +32,23 @@ const openDirectTradingView = (symbol: string, tf: string = '1H') => {
   window.open(url, '_blank', 'noopener,noreferrer');
 };
 
+const FAKE_OR_STABLE_SYMBOLS = new Set([
+  'HYPE', 'SNXXB', 'MUB', 'MUUB', 'AXTIB',
+  'USD1', 'USDC', 'FDUSD', 'TUSD', 'EUR', 'DAI', 'USDP', 'AEUR', 'EURI', 'USDE', 'USDD', 'BUSD'
+]);
+
 const DEFAULT_DASHBOARD_DATA = {
-  gainers: [
-    { symbol: 'NEAR', rsi1H: 64.2, change24h: 6.30, price: 5.48 },
-    { symbol: 'SOL', rsi1H: 62.4, change24h: 4.82, price: 188.45 },
-    { symbol: 'BTC', rsi1H: 61.8, change24h: 1.85, price: 68420.00 },
-    { symbol: 'AVAX', rsi1H: 60.5, change24h: 3.12, price: 34.62 },
-    { symbol: 'SUI', rsi1H: 60.2, change24h: 5.40, price: 1.82 },
-    { symbol: 'FET', rsi1H: 63.1, change24h: 4.15, price: 1.42 },
-    { symbol: 'TIA', rsi1H: 61.0, change24h: 3.80, price: 6.15 }
-  ],
-  v1Coins: [
-    { symbol: 'ETH', rsi1H: 54.8, change24h: 2.15, price: 2984.50, isAccentGreen: true },
-    { symbol: 'BNB', rsi1H: 53.6, change24h: 1.20, price: 592.10, isAccentGreen: true },
-    { symbol: 'DOT', rsi1H: 52.4, change24h: 2.80, price: 4.75, isAccentGreen: true },
-    { symbol: 'LINK', rsi1H: 55.1, change24h: 3.45, price: 12.80, isAccentGreen: true },
-    { symbol: 'APT', rsi1H: 54.0, change24h: 1.90, price: 8.92, isAccentGreen: true },
-    { symbol: 'INJ', rsi1H: 53.2, change24h: 2.40, price: 21.30, isAccentGreen: true },
-    { symbol: 'RENDER', rsi1H: 54.5, change24h: 3.10, price: 6.25, isAccentGreen: true }
-  ],
-  neutral: [
-    { symbol: 'XRP', rsi1H: 46.2, change24h: 0.45, price: 0.54 },
-    { symbol: 'ADA', rsi1H: 44.8, change24h: -0.80, price: 0.35 },
-    { symbol: 'DOGE', rsi1H: 43.5, change24h: -1.10, price: 0.12 },
-    { symbol: 'LTC', rsi1H: 45.2, change24h: 0.15, price: 71.40 },
-    { symbol: 'ATOM', rsi1H: 42.1, change24h: -1.40, price: 4.85 },
-    { symbol: 'MATIC', rsi1H: 46.8, change24h: 0.30, price: 0.38 }
-  ],
-  hiddenBull: [
-    { symbol: 'HYPE', rsi1H: 33.4, change24h: 3.42, price: 79.84, isAccentGreen: true },
-    { symbol: 'SNXXB', rsi1H: 33.2, change24h: -1.25, price: 10.93, isAccentGreen: true },
-    { symbol: 'MUB', rsi1H: 33.3, change24h: 0.85, price: 926.96, isAccentGreen: true },
-    { symbol: 'MUUB', rsi1H: 35.6, change24h: -2.15, price: 27.26, isAccentGreen: true },
-    { symbol: 'AXTIB', rsi1H: 39.4, change24h: 1.45, price: 61.53, isAccentGreen: true },
-    { symbol: 'SEI', rsi1H: 36.8, change24h: 0.90, price: 0.42, isAccentGreen: true }
-  ],
-  oversold: [
-    { symbol: 'FIL', rsi1H: 28.4, change24h: -4.20, price: 3.85 },
-    { symbol: 'AR', rsi1H: 26.8, change24h: -5.10, price: 18.20 },
-    { symbol: 'OP', rsi1H: 29.1, change24h: -3.80, price: 1.62 },
-    { symbol: 'ARB', rsi1H: 27.5, change24h: -4.60, price: 0.58 },
-    { symbol: 'STX', rsi1H: 28.9, change24h: -3.20, price: 1.74 }
-  ],
-  extreme: [
-    { symbol: 'CRV', rsi1H: 18.2, change24h: -8.40, price: 0.28 },
-    { symbol: 'DYDX', rsi1H: 17.5, change24h: -9.10, price: 1.12 },
-    { symbol: 'AAVE', rsi1H: 19.4, change24h: -7.50, price: 142.10 }
-  ],
-  topMovers: [
-    { symbol: 'NEAR', change24h: 6.30, price: 5.48 },
-    { symbol: 'SUI', change24h: 5.40, price: 1.82 },
-    { symbol: 'SOL', change24h: 4.82, price: 188.45 },
-    { symbol: 'FET', change24h: 4.15, price: 1.42 },
-    { symbol: 'TIA', change24h: 3.80, price: 6.15 },
-    { symbol: 'LINK', change24h: 3.45, price: 12.80 },
-    { symbol: 'HYPE', change24h: 3.42, price: 79.84 },
-    { symbol: 'AVAX', change24h: 3.12, price: 34.62 },
-    { symbol: 'RENDER', change24h: 3.10, price: 6.25 },
-    { symbol: 'DOT', change24h: 2.80, price: 4.75 }
-  ],
+  gainers: [],
+  v1Coins: [],
+  neutral: [],
+  hiddenBull: [],
+  oversold: [],
+  extreme: [],
+  topMovers: [],
+  updatedTime: '',
   marketSentiment: {
-    direction: '↗ BULLISH',
-    breadthText: '62% rising · 38% falling (24h)',
+    direction: '→ NEUTRAL',
+    breadthText: 'Connecting to Binance...',
     isBullish: true
   }
 };
@@ -103,8 +58,24 @@ const getInitialDashboardData = () => {
     const raw = localStorage.getItem('cached_dashboard_data');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.gainers) && parsed.gainers.length > 0) {
-        return parsed;
+      if (parsed && typeof parsed === 'object') {
+        const cleanList = (arr: any[]) =>
+          Array.isArray(arr) ? arr.filter((c: any) => c && c.symbol && !FAKE_OR_STABLE_SYMBOLS.has(c.symbol.replace('USDT', ''))) : [];
+
+        const cleanedData = {
+          gainers: cleanList(parsed.gainers),
+          v1Coins: cleanList(parsed.v1Coins),
+          neutral: cleanList(parsed.neutral),
+          hiddenBull: cleanList(parsed.hiddenBull),
+          oversold: cleanList(parsed.oversold),
+          extreme: cleanList(parsed.extreme),
+          topMovers: Array.isArray(parsed.topMovers) ? parsed.topMovers.filter((c: any) => c && c.symbol && !FAKE_OR_STABLE_SYMBOLS.has(c.symbol.replace('USDT', ''))) : [],
+          updatedTime: parsed.updatedTime || '',
+          marketSentiment: parsed.marketSentiment || DEFAULT_DASHBOARD_DATA.marketSentiment
+        };
+        if (cleanedData.gainers.length > 0 || cleanedData.v1Coins.length > 0 || cleanedData.hiddenBull.length > 0) {
+          return cleanedData;
+        }
       }
     }
   } catch (e) {}
@@ -180,22 +151,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           const usdtMap: Record<string, { price: number; change24h: number }> = {};
           const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];
 
-          const fallbackZones: {
-            gainers: HeatmapCoin[];
-            v1: HeatmapCoin[];
-            neutral: HeatmapCoin[];
-            hiddenBull: HeatmapCoin[];
-            oversold: HeatmapCoin[];
-            extreme: HeatmapCoin[];
-          } = {
-            gainers: [],
-            v1: [],
-            neutral: [],
-            hiddenBull: [],
-            oversold: [],
-            extreme: []
-          };
-
           for (const t of data) {
             if (
               t.symbol &&
@@ -206,37 +161,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
               !t.symbol.includes('BEAR')
             ) {
               const cleanSym = t.symbol.replace('USDT', '');
+              if (FAKE_OR_STABLE_SYMBOLS.has(cleanSym)) continue;
               const price = parseFloat(t.lastPrice);
               const change24h = parseFloat(t.priceChangePercent);
               usdtMap[cleanSym] = { price, change24h };
               usdtMap[t.symbol] = { price, change24h };
               usdtList.push({ symbol: cleanSym, change24h, price });
-
-              const high = parseFloat(t.highPrice || '0');
-              const low = parseFloat(t.lowPrice || '0');
-              const range = high - low;
-              const pos = range > 0 ? (price - low) / range : 0.5;
-              const estRsi = Math.max(12, Math.min(94, 30 + pos * 40 + change24h * 0.5));
-              const coinDto: HeatmapCoin = {
-                symbol: cleanSym,
-                rsi1H: parseFloat(estRsi.toFixed(1)),
-                rsiTf: parseFloat(estRsi.toFixed(1)),
-                timeframe: currentTf,
-                change24h: parseFloat(change24h.toFixed(2))
-              };
-              if (estRsi >= 60) fallbackZones.gainers.push(coinDto);
-              else if (estRsi >= 50) fallbackZones.v1.push(coinDto);
-              else if (estRsi >= 40) fallbackZones.neutral.push(coinDto);
-              else if (estRsi >= 30) fallbackZones.hiddenBull.push(coinDto);
-              else if (estRsi >= 20) fallbackZones.oversold.push(coinDto);
-              else fallbackZones.extreme.push(coinDto);
             }
           }
 
           const top10 = [...usdtList].sort((a, b) => b.change24h - a.change24h).slice(0, 10);
           const total = usdtList.length;
           const rising = usdtList.filter(c => c.change24h > 0).length;
-          const risingPct = Math.round((rising / total) * 100);
+          const risingPct = total > 0 ? Math.round((rising / total) * 100) : 50;
           const fallingPct = 100 - risingPct;
 
           overview = {
@@ -251,8 +188,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               risingPct,
               fallingPct,
               sentiment: risingPct >= 52 ? 'BULLISH' : risingPct <= 45 ? 'BEARISH' : 'NEUTRAL'
-            },
-            zones: fallbackZones
+            }
           };
         } catch (binanceErr) {
           console.warn('[Dashboard] Direct Binance fetch notice');

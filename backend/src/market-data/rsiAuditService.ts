@@ -211,8 +211,7 @@ export class RsiAuditService {
       // 1. Production calculation
       const prodResult: RSIResult = calculateRSI(closedCandles, 14, {
         symbol,
-        timeframe,
-        useClosedCandleOnly: true
+        timeframe
       });
 
       // 2. Independent test oracle calculation
@@ -244,8 +243,7 @@ export class RsiAuditService {
             const histSlice = closedCandles.slice(0, targetIdx + 1);
             const histProd = calculateRSI(histSlice, 14, {
               symbol,
-              timeframe,
-              useClosedCandleOnly: true
+              timeframe
             });
             tvRefRsi = histRef.tvRsi;
             if (Math.abs(histProd.current - histRef.tvRsi) <= 0.05) {
