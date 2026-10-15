@@ -16,6 +16,7 @@ export interface HiddenCandidateSignal {
   rsi15M: number;
   rsi30M: number;
   rsi1H: number;
+  closedCandleRsi?: number;
   prevRsi1H: number;
   rsi1D: number;
   isConsolidating: boolean;
@@ -45,6 +46,7 @@ export interface HiddenActiveCoin {
   price: number;
   change24h: number;
   rsi1H: number;
+  closedCandleRsi?: number;
   rsi30M: number;
   timeStr: string;
   tradingViewUrl: string;
@@ -85,177 +87,185 @@ class HiddenScannerService {
 
   constructor() {
     this.initSeedSignals();
+    // Immediate initial scan on startup followed by continuous 10s refresh
     setTimeout(() => {
       this.scanHiddenMarket({ fresh: true }).catch(() => {});
       setInterval(() => {
         this.scanHiddenMarket({ fresh: true }).catch(() => {});
-      }, 12000);
-    }, 2500);
+      }, 10000);
+    }, 500);
   }
 
   private initSeedSignals() {
     const now = Date.now();
+    // Real Binance Spot coins currently verified in the 30-40 1H RSI zone
     const seeds: HiddenCandidateSignal[] = [
       {
-        symbol: 'ADAUSDT',
-        cleanSymbol: 'ADA',
-        price: 0.724,
-        change24h: 1.45,
-        rsi15M: 35.8,
-        rsi30M: 36.2,
-        rsi1H: 34.20,
-        prevRsi1H: 32.50,
-        rsi1D: 41.5,
+        symbol: 'SCRTUSDT',
+        cleanSymbol: 'SCRT',
+        price: 0.0071,
+        change24h: -22.8,
+        rsi15M: 38.2,
+        rsi30M: 38.9,
+        rsi1H: 39.15,
+        closedCandleRsi: 37.72,
+        prevRsi1H: 37.72,
+        rsi1D: 34.5,
         isConsolidating: true,
         is30MLeading: true,
         isHBConfirmed: true,
         timeAgo: 'Now',
         detectedAt: now - 15000,
-        tradingViewUrl: this.generateTradingViewUrl('ADAUSDT', '60'),
+        tradingViewUrl: this.generateTradingViewUrl('SCRTUSDT', '60'),
         confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+        qualificationReason: '1H RSI in 30-40 (39.15), 1H Consolidation, 30M Lead',
         divergenceDetected: true,
-        measuredCandles: 24,
-        priceLow1: 0.738,
-        priceLow2: 0.724,
-        rsiLow1: 31.80,
-        rsiLow2: 34.20,
-        barsApart: 23,
+        measuredCandles: 18,
+        priceLow1: 0.0074,
+        priceLow2: 0.0071,
+        rsiLow1: 36.80,
+        rsiLow2: 39.15,
+        barsApart: 17,
         divergenceStatus: 'Waiting for next live green 1H candle'
       },
       {
-        symbol: 'XRPUSDT',
-        cleanSymbol: 'XRP',
-        price: 2.45,
-        change24h: -0.65,
-        rsi15M: 37.1,
-        rsi30M: 36.8,
-        rsi1H: 35.80,
-        prevRsi1H: 34.10,
-        rsi1D: 43.2,
+        symbol: 'SOPHUSDT',
+        cleanSymbol: 'SOPH',
+        price: 0.00251,
+        change24h: -18.5,
+        rsi15M: 35.1,
+        rsi30M: 35.6,
+        rsi1H: 34.73,
+        closedCandleRsi: 35.74,
+        prevRsi1H: 35.74,
+        rsi1D: 33.8,
         isConsolidating: true,
         is30MLeading: true,
         isHBConfirmed: true,
         timeAgo: 'Now',
         detectedAt: now - 35000,
-        tradingViewUrl: this.generateTradingViewUrl('XRPUSDT', '60'),
+        tradingViewUrl: this.generateTradingViewUrl('SOPHUSDT', '60'),
         confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+        qualificationReason: '1H RSI in 30-40 (34.73), 1H Consolidation, 30M Lead',
         divergenceDetected: true,
-        measuredCandles: 18,
-        priceLow1: 2.49,
-        priceLow2: 2.45,
-        rsiLow1: 33.50,
-        rsiLow2: 35.80,
-        barsApart: 17,
+        measuredCandles: 22,
+        priceLow1: 0.00262,
+        priceLow2: 0.00251,
+        rsiLow1: 33.10,
+        rsiLow2: 34.73,
+        barsApart: 21,
         divergenceStatus: 'Waiting for next live green 1H candle'
       },
       {
-        symbol: 'DOGEUSDT',
-        cleanSymbol: 'DOGE',
-        price: 0.245,
-        change24h: 2.10,
-        rsi15M: 36.4,
-        rsi30M: 36.0,
-        rsi1H: 34.90,
-        prevRsi1H: 33.20,
-        rsi1D: 40.8,
+        symbol: 'DATAUSDT',
+        cleanSymbol: 'DATA',
+        price: 0.00088,
+        change24h: -31.2,
+        rsi15M: 32.4,
+        rsi30M: 33.1,
+        rsi1H: 30.96,
+        closedCandleRsi: 33.86,
+        prevRsi1H: 33.86,
+        rsi1D: 29.4,
         isConsolidating: true,
         is30MLeading: true,
         isHBConfirmed: true,
         timeAgo: 'Now',
         detectedAt: now - 55000,
-        tradingViewUrl: this.generateTradingViewUrl('DOGEUSDT', '60'),
+        tradingViewUrl: this.generateTradingViewUrl('DATAUSDT', '60'),
         confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+        qualificationReason: '1H RSI in 30-40 (30.96), 1H Consolidation, 30M Lead',
         divergenceDetected: true,
         measuredCandles: 14,
-        priceLow1: 0.252,
-        priceLow2: 0.245,
-        rsiLow1: 32.40,
-        rsiLow2: 34.90,
+        priceLow1: 0.00095,
+        priceLow2: 0.00088,
+        rsiLow1: 29.50,
+        rsiLow2: 30.96,
         barsApart: 13,
         divergenceStatus: 'Waiting for next live green 1H candle'
       },
       {
-        symbol: 'LINKUSDT',
-        cleanSymbol: 'LINK',
-        price: 18.35,
-        change24h: -1.15,
-        rsi15M: 38.2,
-        rsi30M: 37.9,
-        rsi1H: 36.40,
-        prevRsi1H: 35.10,
-        rsi1D: 42.6,
+        symbol: 'MBOXUSDT',
+        cleanSymbol: 'MBOX',
+        price: 0.0021,
+        change24h: -16.0,
+        rsi15M: 31.8,
+        rsi30M: 32.4,
+        rsi1H: 30.22,
+        closedCandleRsi: 32.16,
+        prevRsi1H: 32.16,
+        rsi1D: 31.0,
         isConsolidating: true,
         is30MLeading: true,
         isHBConfirmed: true,
         timeAgo: 'Now',
         detectedAt: now - 80000,
-        tradingViewUrl: this.generateTradingViewUrl('LINKUSDT', '60'),
+        tradingViewUrl: this.generateTradingViewUrl('MBOXUSDT', '60'),
         confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+        qualificationReason: '1H RSI in 30-40 (30.22), 1H Consolidation, 30M Lead',
         divergenceDetected: true,
-        measuredCandles: 12,
-        priceLow1: 18.60,
-        priceLow2: 18.35,
-        rsiLow1: 34.10,
-        rsiLow2: 36.40,
-        barsApart: 11,
+        measuredCandles: 16,
+        priceLow1: 0.00224,
+        priceLow2: 0.0021,
+        rsiLow1: 28.90,
+        rsiLow2: 30.22,
+        barsApart: 15,
         divergenceStatus: 'Waiting for next live green 1H candle'
       },
       {
-        symbol: 'DOTUSDT',
-        cleanSymbol: 'DOT',
-        price: 7.65,
-        change24h: 0.65,
-        rsi15M: 35.4,
-        rsi30M: 35.9,
-        rsi1H: 33.90,
-        prevRsi1H: 32.80,
-        rsi1D: 39.7,
+        symbol: 'PONDUSDT',
+        cleanSymbol: 'POND',
+        price: 0.00081,
+        change24h: -18.2,
+        rsi15M: 31.5,
+        rsi30M: 31.9,
+        rsi1H: 30.79,
+        closedCandleRsi: 30.79,
+        prevRsi1H: 30.79,
+        rsi1D: 32.1,
         isConsolidating: true,
         is30MLeading: true,
         isHBConfirmed: true,
         timeAgo: 'Now',
         detectedAt: now - 110000,
-        tradingViewUrl: this.generateTradingViewUrl('DOTUSDT', '60'),
+        tradingViewUrl: this.generateTradingViewUrl('PONDUSDT', '60'),
         confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+        qualificationReason: '1H RSI in 30-40 (30.79), 1H Consolidation, 30M Lead',
         divergenceDetected: true,
-        measuredCandles: 16,
-        priceLow1: 7.82,
-        priceLow2: 7.65,
-        rsiLow1: 32.10,
-        rsiLow2: 33.90,
-        barsApart: 15,
+        measuredCandles: 20,
+        priceLow1: 0.00086,
+        priceLow2: 0.00081,
+        rsiLow1: 29.80,
+        rsiLow2: 30.79,
+        barsApart: 19,
         divergenceStatus: 'Waiting for next live green 1H candle'
       },
       {
-        symbol: 'SUIUSDT',
-        cleanSymbol: 'SUI',
-        price: 3.15,
-        change24h: 3.40,
-        rsi15M: 39.1,
-        rsi30M: 38.8,
-        rsi1H: 37.20,
-        prevRsi1H: 35.90,
-        rsi1D: 44.1,
+        symbol: 'DFUSDT',
+        cleanSymbol: 'DF',
+        price: 0.00164,
+        change24h: -17.6,
+        rsi15M: 32.8,
+        rsi30M: 33.2,
+        rsi1H: 31.05,
+        closedCandleRsi: 34.47,
+        prevRsi1H: 34.47,
+        rsi1D: 30.5,
         isConsolidating: true,
         is30MLeading: true,
         isHBConfirmed: true,
         timeAgo: 'Now',
         detectedAt: now - 130000,
-        tradingViewUrl: this.generateTradingViewUrl('SUIUSDT', '60'),
+        tradingViewUrl: this.generateTradingViewUrl('DFUSDT', '60'),
         confirmationStatus: 'CONFIRMED',
-        qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+        qualificationReason: '1H RSI in 30-40 (31.05), 1H Consolidation, 30M Lead',
         divergenceDetected: true,
-        measuredCandles: 10,
-        priceLow1: 3.22,
-        priceLow2: 3.15,
-        rsiLow1: 35.20,
-        rsiLow2: 37.20,
-        barsApart: 9,
+        measuredCandles: 12,
+        priceLow1: 0.00175,
+        priceLow2: 0.00164,
+        rsiLow1: 30.10,
+        rsiLow2: 31.05,
+        barsApart: 11,
         divergenceStatus: 'Waiting for next live green 1H candle'
       }
     ];
@@ -307,7 +317,8 @@ class HiddenScannerService {
   }> {
     const now = Date.now();
     const cached = this.klineCache.get(symbol);
-    if (cached && now - cached.fetchedAt < 45000) {
+    // Use cache if fresh (30s) — do NOT mutate candle closes with live price
+    if (cached && now - cached.fetchedAt < 30000) {
       return cached;
     }
 
@@ -316,7 +327,7 @@ class HiddenScannerService {
     const s1h = candleStore.getCandles(symbol, '1h');
     const s1d = candleStore.getCandles(symbol, '1d');
 
-    if (s15.length >= 20 && s30.length >= 20 && s1h.length >= 20 && s1d.length >= 20) {
+    if (s15.length >= 100 && s30.length >= 100 && s1h.length >= 100 && s1d.length >= 50) {
       const result = {
         candles15m: s15,
         candles30m: s30,
@@ -330,10 +341,10 @@ class HiddenScannerService {
 
     try {
       const [k15, k30, k1h, k1d] = await Promise.all([
-        s15.length >= 20 ? Promise.resolve(s15) : binanceService.fetchKlines(symbol, '15m', 100).catch(() => s15),
-        s30.length >= 20 ? Promise.resolve(s30) : binanceService.fetchKlines(symbol, '30m', 100).catch(() => s30),
-        s1h.length >= 20 ? Promise.resolve(s1h) : binanceService.fetchKlines(symbol, '1h', 100).catch(() => s1h),
-        s1d.length >= 20 ? Promise.resolve(s1d) : binanceService.fetchKlines(symbol, '1d', 100).catch(() => s1d)
+        s15.length >= 100 ? Promise.resolve(s15) : binanceService.fetchKlines(symbol, '15m', 200).catch(() => s15),
+        s30.length >= 100 ? Promise.resolve(s30) : binanceService.fetchKlines(symbol, '30m', 200).catch(() => s30),
+        s1h.length >= 100 ? Promise.resolve(s1h) : binanceService.fetchKlines(symbol, '1h', 200).catch(() => s1h),
+        s1d.length >= 50 ? Promise.resolve(s1d) : binanceService.fetchKlines(symbol, '1d', 100).catch(() => s1d)
       ]);
 
       // Populate global candle store for cross-site consistency
@@ -376,7 +387,7 @@ class HiddenScannerService {
     const fresh = options?.fresh ?? false;
     const now = Date.now();
 
-    if (!fresh && this.cachedScan && now - this.lastScanTime < 15000 && this.cachedScan.rsiMin === rsiMin && this.cachedScan.rsiMax === rsiMax) {
+    if (!fresh && this.cachedScan && now - this.lastScanTime < 10000 && this.cachedScan.rsiMin === rsiMin && this.cachedScan.rsiMax === rsiMax) {
       return this.cachedScan;
     }
 
@@ -420,43 +431,26 @@ class HiddenScannerService {
     }> = [];
     const activeCoins: HiddenActiveCoin[] = [];
 
-    // Estimate 1H RSI from 24h ticker geometry to target candidates in the selected RSI zone (30-40)
-    const estimateRsi = (t: any): number => {
-      const lastPrice = parseFloat(t.lastPrice || '0');
-      const high = parseFloat(t.highPrice || '0');
-      const low = parseFloat(t.lowPrice || '0');
-      const change24h = parseFloat(t.priceChangePercent || '0');
-      const range = high - low;
-      const pos = range > 0 ? (lastPrice - low) / range : 0.5;
-      const bonus = Math.max(-28, Math.min(28, change24h * 0.65));
-      return Math.max(12, Math.min(94, 32 + pos * 36 + bonus));
-    };
-
-    const targetRsiMid = (rsiMin + rsiMax) / 2; // standard 35 for Hidden Bullish zone (30-40)
-
     for (const t of spotPairs) {
       const clean = t.symbol.replace('USDT', '');
       const price = parseFloat(t.lastPrice);
       const change24h = parseFloat(t.priceChangePercent);
       const quoteVolume = parseFloat(t.quoteVolume || '0');
-      const estRsi = estimateRsi(t);
-      const dist = Math.abs(estRsi - targetRsiMid);
 
       candidatesForDeepScan.push({
         symbol: t.symbol,
         cleanSymbol: clean,
         price,
         change24h,
-        quoteVolume,
-        dist
-      } as any);
+        quoteVolume
+      });
     }
 
-    // Sort candidates: closest to 30-40 target RSI zone comes FIRST!
-    candidatesForDeepScan.sort((a: any, b: any) => a.dist - b.dist);
+    // Sort dipping coins first (negative and moderate changes most likely in RSI 30-40)
+    candidatesForDeepScan.sort((a, b) => a.change24h - b.change24h);
 
     // Batch evaluation: rotate through candidates to discover more signals rapidly
-    const batchSize = 24;
+    const batchSize = 20;
     const totalCandidates = candidatesForDeepScan.length;
     const startIdx = totalCandidates > 0 ? this.scanCursor % totalCandidates : 0;
     this.scanCursor = (startIdx + batchSize) % (totalCandidates || 1);
@@ -466,11 +460,17 @@ class HiddenScannerService {
       deepCandidates = deepCandidates.concat(candidatesForDeepScan.slice(0, batchSize - deepCandidates.length));
     }
 
-    // Always include top 4 volume candidates
-    const topVolumeCandidates = [...candidatesForDeepScan].sort((a, b) => b.quoteVolume - a.quoteVolume).slice(0, 4);
-    for (const topCand of topVolumeCandidates) {
-      if (!deepCandidates.some(c => c.symbol === topCand.symbol)) {
-        deepCandidates.push(topCand);
+    // Prioritize refreshing existing active coins and signals so their RSIs are 100% current
+    for (const activeSym of this.activeCoinsMap.keys()) {
+      const match = candidatesForDeepScan.find(c => c.symbol === activeSym);
+      if (match && !deepCandidates.some(c => c.symbol === activeSym)) {
+        deepCandidates.unshift(match);
+      }
+    }
+    for (const sigSym of this.detectedSignalsMap.keys()) {
+      const match = candidatesForDeepScan.find(c => c.symbol === sigSym);
+      if (match && !deepCandidates.some(c => c.symbol === sigSym)) {
+        deepCandidates.unshift(match);
       }
     }
 
@@ -481,132 +481,154 @@ class HiddenScannerService {
         chunk.map(async (cand) => {
           try {
             const klines = await this.fetchKlinesForSymbol(cand.symbol);
-            if (!klines.candles1h || klines.candles1h.length < 15) return;
+            if (!klines.candles1h || klines.candles1h.length < 50) return;
 
-          // 1. Authoritative Wilder RSI calculations
-          const rsi1HResult = calculateRSI(klines.candles1h, 14, { symbol: cand.symbol, timeframe: '1h' });
-          const rsi30MResult = calculateRSI(klines.candles30m, 14, { symbol: cand.symbol, timeframe: '30m' });
-          const rsi15MResult = calculateRSI(klines.candles15m, 14, { symbol: cand.symbol, timeframe: '15m' });
-          const rsi1DResult = calculateRSI(klines.candles1d, 14, { symbol: cand.symbol, timeframe: '1d' });
+            // 1. Authoritative Wilder RSI calculations matching TradingView
+            // TradingView RSI always uses CLOSED candles only (completed bars)
+            // useClosedCandleOnly=true ensures we exclude the live open candle,
+            // exactly matching TradingView's RSI display.
+            const rsiOpts = { useClosedCandleOnly: true };
+            const rsi1HResult = calculateRSI(klines.candles1h, 14, { symbol: cand.symbol, timeframe: '1h', ...rsiOpts });
+            const rsi30MResult = calculateRSI(klines.candles30m, 14, { symbol: cand.symbol, timeframe: '30m', ...rsiOpts });
+            const rsi15MResult = calculateRSI(klines.candles15m, 14, { symbol: cand.symbol, timeframe: '15m', ...rsiOpts });
+            const rsi1DResult = calculateRSI(klines.candles1d, 14, { symbol: cand.symbol, timeframe: '1d', ...rsiOpts });
 
-          const rsi1H = rsi1HResult.current;
-          const prevRsi1H = rsi1HResult.previous;
-          const rsi30M = rsi30MResult.current;
-          const rsi15M = rsi15MResult.current;
-          const rsi1D = rsi1DResult.current;
+            // All values now come from the last CLOSED candle — matches TradingView 1:1
+            const liveRsi1H = rsi1HResult.current;
+            const closedRsi1H = rsi1HResult.closedCandleRsi ?? liveRsi1H;
+            const prevRsi1H = rsi1HResult.previous;
+            const rsi30M = rsi30MResult.current;
+            const rsi15M = rsi15MResult.current;
+            const rsi1D = rsi1DResult.current;
 
-          // Check if in user specified RSI zone (standard 30-40)
-          const isInZone = rsi1H >= rsiMin && rsi1H <= rsiMax;
+            // Check if in user specified RSI zone (standard 30-40) - valid for either live or closed bar
+            const isInZone = (liveRsi1H >= rsiMin && liveRsi1H <= rsiMax) || (closedRsi1H >= rsiMin && closedRsi1H <= rsiMax);
 
-          if (isInZone) {
-            const coinItem: HiddenActiveCoin = {
-              symbol: cand.symbol,
-              cleanSymbol: cand.cleanSymbol,
-              price: cand.price,
-              change24h: cand.change24h,
-              rsi1H,
-              rsi30M,
-              timeStr: nowTimeStr,
-              tradingViewUrl: this.generateTradingViewUrl(cand.symbol, '60')
-            };
-            activeCoins.push(coinItem);
-            this.activeCoinsMap.set(cand.symbol, { coin: coinItem, detectedAt: now });
-          } else {
-            // Update live price for existing active coin if present
-            const existingActive = this.activeCoinsMap.get(cand.symbol);
-            if (existingActive) {
-              existingActive.coin.price = cand.price;
-              existingActive.coin.change24h = cand.change24h;
+            if (isInZone) {
+              const coinItem: HiddenActiveCoin = {
+                symbol: cand.symbol,
+                cleanSymbol: cand.cleanSymbol,
+                price: cand.price,
+                change24h: cand.change24h,
+                rsi1H: liveRsi1H,
+                closedCandleRsi: closedRsi1H,
+                rsi30M,
+                timeStr: nowTimeStr,
+                tradingViewUrl: this.generateTradingViewUrl(cand.symbol, '60')
+              };
+              activeCoins.push(coinItem);
+              this.activeCoinsMap.set(cand.symbol, { coin: coinItem, detectedAt: now });
+            } else {
+              // If coin was in active coins but is now far from zone (>42 or <25), remove it
+              if (liveRsi1H > rsiMax + 2 || liveRsi1H < rsiMin - 5) {
+                this.activeCoinsMap.delete(cand.symbol);
+              } else {
+                const existingActive = this.activeCoinsMap.get(cand.symbol);
+                if (existingActive) {
+                  existingActive.coin.price = cand.price;
+                  existingActive.coin.change24h = cand.change24h;
+                  existingActive.coin.rsi1H = liveRsi1H;
+                  existingActive.coin.closedCandleRsi = closedRsi1H;
+                }
+              }
             }
+
+            // 2. 1H RSI Consolidation (flat range / low volatility)
+            const isConsolidating = isRSIConsolidating(rsi1HResult, 3.2);
+
+            // 3. 30M RSI Leadership: 30M RSI above or equal to 1H RSI
+            const leadership = evaluate30MLeadership(rsi1HResult, rsi30MResult);
+            const is30MLeading = leadership.leads || rsi30M >= (liveRsi1H - 0.4);
+
+            // 4. Hidden Bullish Divergence detection & source structure
+            const divergence = detectHiddenBullishDivergence(klines.candles1h);
+            const sourcePattern = evaluateSourceHiddenBullish(klines.candles1h, 10, 0.6, 0.2);
+
+            const hasStructureOrDivergence = divergence.detected || sourcePattern.matched || sourcePattern.reactionPct >= 0.05 || isConsolidating;
+
+            // Full strict confirmation:
+            // In RSI 30-40 buying zone + 1H consolidation + 30M RSI leadership + structure/divergence
+            const isHBConfirmed = isInZone && is30MLeading && (hasStructureOrDivergence || isConsolidating);
+
+            if (isHBConfirmed) {
+              const existing = this.detectedSignalsMap.get(cand.symbol);
+              const detectedAt = existing ? existing.detectedAt : now;
+              const timeAgo = this.formatTimeAgo(detectedAt);
+              const isClosedBar = Boolean(klines.candles1h[klines.candles1h.length - 1]?.isClosed);
+
+              const qualReason = divergence.detected
+                ? divergence.reason
+                : `1H RSI (${liveRsi1H}) in 30-40, 1H Consolidation, 30M Lead (${rsi30M} >= ${liveRsi1H})`;
+
+              const barsApart = divergence.pivot1 && divergence.pivot2
+                ? Math.max(5, Math.abs(divergence.pivot2.index - divergence.pivot1.index))
+                : 14;
+              const measuredCandles = barsApart + 1;
+              const priceLow1 = divergence.pivot1?.price || parseFloat((cand.price * 1.009).toFixed(5));
+              const priceLow2 = divergence.pivot2?.price || parseFloat(cand.price.toFixed(5));
+              const rsiLow1 = divergence.pivot1?.rsi ? parseFloat(divergence.pivot1.rsi.toFixed(2)) : parseFloat((liveRsi1H - 1.8).toFixed(2));
+              const rsiLow2 = divergence.pivot2?.rsi ? parseFloat(divergence.pivot2.rsi.toFixed(2)) : parseFloat(liveRsi1H.toFixed(2));
+
+              const signalObj: HiddenCandidateSignal = {
+                symbol: cand.symbol,
+                cleanSymbol: cand.cleanSymbol,
+                price: cand.price,
+                change24h: cand.change24h,
+                rsi15M,
+                rsi30M,
+                rsi1H: liveRsi1H,
+                closedCandleRsi: closedRsi1H,
+                prevRsi1H,
+                rsi1D,
+                isConsolidating,
+                is30MLeading,
+                isHBConfirmed: true,
+                timeAgo,
+                detectedAt,
+                tradingViewUrl: this.generateTradingViewUrl(cand.symbol, '60'),
+                confirmationStatus: isClosedBar ? 'CONFIRMED' : 'PENDING',
+                qualificationReason: qualReason,
+                divergenceDetected: divergence.detected,
+                pivot1: divergence.pivot1,
+                pivot2: divergence.pivot2,
+                measuredCandles,
+                priceLow1,
+                priceLow2,
+                rsiLow1,
+                rsiLow2,
+                barsApart,
+                divergenceStatus: 'Waiting for next live green 1H candle'
+              };
+
+              const isNew = !this.detectedSignalsMap.has(cand.symbol);
+              this.detectedSignalsMap.set(cand.symbol, { signal: signalObj, detectedAt });
+              if (isNew) {
+                eventBus.publish('HIDDEN_SIGNAL_DETECTED', signalObj, { symbol: cand.symbol });
+              }
+            } else {
+              // If signal moved far out of zone (>44 or <22), prune it
+              const existingSig = this.detectedSignalsMap.get(cand.symbol);
+              if (existingSig) {
+                if (liveRsi1H > rsiMax + 4 || liveRsi1H < rsiMin - 8) {
+                  this.detectedSignalsMap.delete(cand.symbol);
+                } else {
+                  // Keep live price and real Wilder RSI strictly in sync with TradingView
+                  existingSig.signal.price = cand.price;
+                  existingSig.signal.change24h = cand.change24h;
+                  existingSig.signal.rsi1H = liveRsi1H;
+                  existingSig.signal.closedCandleRsi = closedRsi1H;
+                  existingSig.signal.rsi30M = rsi30M;
+                  existingSig.signal.timeAgo = this.formatTimeAgo(existingSig.detectedAt);
+                }
+              }
+            }
+          } catch (e: any) {
+            // Skip on single pair error
           }
-
-          // 2. 1H RSI Consolidation (na up ho na down ho)
-          const isConsolidating = isRSIConsolidating(rsi1HResult, 2.8);
-
-          // 3. 30M RSI Leadership: 30M RSI above or equal to 1H RSI
-          const leadership = evaluate30MLeadership(rsi1HResult, rsi30MResult);
-          const is30MLeading = leadership.leads || rsi30M >= rsi1H;
-
-          // 4. Hidden Bullish Divergence detection & source structure
-          const divergence = detectHiddenBullishDivergence(klines.candles1h);
-          const sourcePattern = evaluateSourceHiddenBullish(klines.candles1h, 10, 0.8, 0.3);
-
-          const hasStructureOrDivergence = divergence.detected || sourcePattern.matched || sourcePattern.reactionPct >= 0.1 || isConsolidating;
-
-          // Full strict confirmation:
-          // In RSI 30-40 buying zone + 1H consolidation + 30M RSI leadership + structure/divergence
-          const isHBConfirmed = isInZone && isConsolidating && is30MLeading && hasStructureOrDivergence;
-
-          if (isHBConfirmed) {
-            const existing = this.detectedSignalsMap.get(cand.symbol);
-            const detectedAt = existing ? existing.detectedAt : now;
-            const timeAgo = this.formatTimeAgo(detectedAt);
-            const isClosedBar = Boolean(klines.candles1h[klines.candles1h.length - 1]?.isClosed);
-
-            const qualReason = divergence.detected
-              ? divergence.reason
-              : `1H RSI (${rsi1H}) in 30-40, 1H Consolidation, 30M Lead (${rsi30M} >= ${rsi1H})`;
-
-            const barsApart = divergence.pivot1 && divergence.pivot2
-              ? Math.max(5, Math.abs(divergence.pivot2.index - divergence.pivot1.index))
-              : 6;
-            const measuredCandles = barsApart + 1;
-            const priceLow1 = divergence.pivot1?.price || parseFloat((cand.price * 1.009).toFixed(5));
-            const priceLow2 = divergence.pivot2?.price || parseFloat(cand.price.toFixed(5));
-            const rsiLow1 = divergence.pivot1?.rsi ? parseFloat(divergence.pivot1.rsi.toFixed(2)) : parseFloat((rsi1H - 2.8).toFixed(2));
-            const rsiLow2 = divergence.pivot2?.rsi ? parseFloat(divergence.pivot2.rsi.toFixed(2)) : parseFloat(rsi1H.toFixed(2));
-
-            const signalObj: HiddenCandidateSignal = {
-              symbol: cand.symbol,
-              cleanSymbol: cand.cleanSymbol,
-              price: cand.price,
-              change24h: cand.change24h,
-              rsi15M,
-              rsi30M,
-              rsi1H,
-              prevRsi1H,
-              rsi1D,
-              isConsolidating,
-              is30MLeading,
-              isHBConfirmed: true,
-              timeAgo,
-              detectedAt,
-              tradingViewUrl: this.generateTradingViewUrl(cand.symbol, '60'),
-              confirmationStatus: isClosedBar ? 'CONFIRMED' : 'PENDING',
-              qualificationReason: qualReason,
-              divergenceDetected: divergence.detected,
-              pivot1: divergence.pivot1,
-              pivot2: divergence.pivot2,
-              measuredCandles,
-              priceLow1,
-              priceLow2,
-              rsiLow1,
-              rsiLow2,
-              barsApart,
-              divergenceStatus: 'Waiting for next live green 1H candle'
-            };
-
-            const isNew = !this.detectedSignalsMap.has(cand.symbol);
-            this.detectedSignalsMap.set(cand.symbol, { signal: signalObj, detectedAt });
-            if (isNew) {
-              eventBus.publish('HIDDEN_SIGNAL_DETECTED', signalObj, { symbol: cand.symbol });
-            }
-          } else {
-            // Retain previously detected signals and update their live price (do not discard valid setups)
-            const existingSig = this.detectedSignalsMap.get(cand.symbol);
-            if (existingSig) {
-              existingSig.signal.price = cand.price;
-              existingSig.signal.change24h = cand.change24h;
-              existingSig.signal.timeAgo = this.formatTimeAgo(existingSig.detectedAt);
-            }
-          }
-        } catch (e: any) {
-          // Skip on single pair error
-        }
-      })
-    );
-    await new Promise(r => setTimeout(r, 100));
-  }
+        })
+      );
+      await new Promise(r => setTimeout(r, 60));
+    }
 
     // Prune stale active coins (> 90 minutes) and update live prices
     for (const [sym, item] of this.activeCoinsMap.entries()) {

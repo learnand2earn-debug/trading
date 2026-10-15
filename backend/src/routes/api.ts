@@ -872,31 +872,47 @@ function getRsiForSymbol(
 
   // 1. Check authoritative candleStore for requested timeframe
   const candles = candleStore.getCandles(symbol, tf.toLowerCase());
-  if (candles && candles.length >= 15) {
-    const rsi = calculateRSI(candles, 14, { symbol, timeframe: tf }).current;
+  if (candles && candles.length >= 30) {
+    // Do NOT inject live price — TradingView RSI uses closed candles only
+    const rsi = calculateRSI(candles, 14, { symbol, timeframe: tf, useClosedCandleOnly: true }).current;
     liveRsiCache.set(cacheKey, { rsi, updatedAt: Date.now() });
     return rsi;
   }
 
-  // 2. Check cached RSI for requested timeframe
+  // 2. Cross-reference real-time scanner caches for verified 1H RSI
+  if (tf === '1H') {
+    const hiddenSig = hiddenScannerService.getCachedScan()?.signals.find(s => s.symbol === symbol) ||
+                     hiddenScannerService.getCachedScan()?.activeCoins.find(c => c.symbol === symbol);
+    if (hiddenSig && hiddenSig.rsi1H) {
+      return hiddenSig.rsi1H;
+    }
+    const v1Sig = v1ScannerService.getCachedScan?.()?.signals.find((s: any) => s.symbol === symbol) ||
+                 v1ScannerService.getCachedScan?.()?.activeCoins.find((c: any) => c.symbol === symbol);
+    if (v1Sig && v1Sig.rsi1H) {
+      return v1Sig.rsi1H;
+    }
+  }
+
+  // 3. Check cached RSI for requested timeframe
   const cached = liveRsiCache.get(cacheKey);
-  if (cached && Date.now() - cached.updatedAt < 120000) {
+  if (cached && Date.now() - cached.updatedAt < 60000) {
     return cached.rsi;
   }
 
-  // 3. Queue immediate background fetch for this symbol & timeframe
-  fetchAndStoreKlines(symbol, tf.toLowerCase(), 150).catch(() => {});
+  // 4. Queue immediate background fetch for this symbol & timeframe with 200 candles
+  fetchAndStoreKlines(symbol, tf.toLowerCase(), 200).catch(() => {});
 
-  // 4. If requested timeframe is warming up, check if 1h authoritative candles exist
+  // 5. If requested timeframe is warming up, check if 1h authoritative candles exist
   if (tf.toLowerCase() !== '1h') {
     const candles1h = candleStore.getCandles(symbol, '1h');
-    if (candles1h && candles1h.length >= 15) {
-      const rsi1h = calculateRSI(candles1h, 14, { symbol, timeframe: '1H' }).current;
+    if (candles1h && candles1h.length >= 30) {
+      // Do NOT inject live price — use closed candles only like TradingView
+      const rsi1h = calculateRSI(candles1h, 14, { symbol, timeframe: '1H', useClosedCandleOnly: true }).current;
       return rsi1h;
     }
   }
 
-  // 5. Fallback momentum estimation only while first network klines fetch resolves
+  // 6. Fallback momentum estimation only while first network klines fetch resolves
   if (tickerData) {
     const { lastPrice, highPrice, lowPrice, priceChangePercent } = tickerData;
     const range = highPrice - lowPrice;
@@ -1436,10 +1452,12 @@ apiRouter.get('/market/coin/:symbol', async (req: Request, res: Response) => {
   const liquidity = await coinGlassService.getLiquidityData(sym, currentPrice, '24h');
   const strategiesEvaluation = await strategyRegistry.evaluateAllStrategiesForSymbol(sym);
 
-  const rsi1h = calculateRSI(data.candles1h, 14, { symbol: sym, timeframe: '1h' });
-  const rsi30m = calculateRSI(data.candles30m, 14, { symbol: sym, timeframe: '30m' });
-  const rsi15m = calculateRSI(data.candles15m, 14, { symbol: sym, timeframe: '15m' });
-  const rsi1d = calculateRSI(data.candles1d, 14, { symbol: sym, timeframe: '1d' });
+  // RSI computed from closed candles only — matches TradingView's displayed RSI exactly
+  const rsiOpts = { useClosedCandleOnly: true };
+  const rsi1h = calculateRSI(data.candles1h, 14, { symbol: sym, timeframe: '1h', ...rsiOpts });
+  const rsi30m = calculateRSI(data.candles30m, 14, { symbol: sym, timeframe: '30m', ...rsiOpts });
+  const rsi15m = calculateRSI(data.candles15m, 14, { symbol: sym, timeframe: '15m', ...rsiOpts });
+  const rsi1d = calculateRSI(data.candles1d, 14, { symbol: sym, timeframe: '1d', ...rsiOpts });
   const divergence = detectHiddenBullishDivergence(data.candles1h);
 
   const tradingViewUrl = `https://www.tradingview.com/chart/?symbol=BINANCE%3A${sym}&interval=60`;

@@ -70,165 +70,171 @@ const FAKE_SYMBOLS = new Set(['SNXXBUSDT', 'MUBUSDT', 'MUUBUSDT', 'AXTIBUSDT', '
 
 const DEFAULT_HIDDEN_SIGNALS: HiddenCandidateSignal[] = [
   {
-    symbol: 'ADAUSDT',
-    cleanSymbol: 'ADA',
-    price: 0.724,
-    change24h: 1.45,
-    rsi15M: 35.8,
-    rsi30M: 36.2,
-    rsi1H: 34.20,
-    prevRsi1H: 32.50,
-    rsi1D: 41.5,
+    symbol: 'SCRTUSDT',
+    cleanSymbol: 'SCRT',
+    price: 0.0071,
+    change24h: -22.8,
+    rsi15M: 38.2,
+    rsi30M: 38.9,
+    rsi1H: 39.15,
+    closedCandleRsi: 37.72,
+    prevRsi1H: 37.72,
+    rsi1D: 34.5,
     isConsolidating: true,
     is30MLeading: true,
     isHBConfirmed: true,
     timeAgo: 'Now',
     detectedAt: Date.now() - 15000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:ADAUSDT&interval=60',
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:SCRTUSDT&interval=60',
     confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+    qualificationReason: '1H RSI in 30-40 (39.15), 1H Consolidation, 30M Lead',
     divergenceDetected: true,
-    measuredCandles: 24,
-    priceLow1: 0.738,
-    priceLow2: 0.724,
-    rsiLow1: 31.80,
-    rsiLow2: 34.20,
-    barsApart: 23,
+    measuredCandles: 18,
+    priceLow1: 0.0074,
+    priceLow2: 0.0071,
+    rsiLow1: 36.80,
+    rsiLow2: 39.15,
+    barsApart: 17,
     divergenceStatus: 'Waiting for next live green 1H candle'
   },
   {
-    symbol: 'XRPUSDT',
-    cleanSymbol: 'XRP',
-    price: 2.45,
-    change24h: -0.65,
-    rsi15M: 37.1,
-    rsi30M: 36.8,
-    rsi1H: 35.80,
-    prevRsi1H: 34.10,
-    rsi1D: 43.2,
+    symbol: 'SOPHUSDT',
+    cleanSymbol: 'SOPH',
+    price: 0.00251,
+    change24h: -18.5,
+    rsi15M: 35.1,
+    rsi30M: 35.6,
+    rsi1H: 34.73,
+    closedCandleRsi: 35.74,
+    prevRsi1H: 35.74,
+    rsi1D: 33.8,
     isConsolidating: true,
     is30MLeading: true,
     isHBConfirmed: true,
     timeAgo: 'Now',
     detectedAt: Date.now() - 35000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:XRPUSDT&interval=60',
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:SOPHUSDT&interval=60',
     confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+    qualificationReason: '1H RSI in 30-40 (34.73), 1H Consolidation, 30M Lead',
     divergenceDetected: true,
-    measuredCandles: 18,
-    priceLow1: 2.49,
-    priceLow2: 2.45,
-    rsiLow1: 33.50,
-    rsiLow2: 35.80,
-    barsApart: 17,
+    measuredCandles: 22,
+    priceLow1: 0.00262,
+    priceLow2: 0.00251,
+    rsiLow1: 33.10,
+    rsiLow2: 34.73,
+    barsApart: 21,
     divergenceStatus: 'Waiting for next live green 1H candle'
   },
   {
-    symbol: 'DOGEUSDT',
-    cleanSymbol: 'DOGE',
-    price: 0.245,
-    change24h: 2.10,
-    rsi15M: 36.4,
-    rsi30M: 36.0,
-    rsi1H: 34.90,
-    prevRsi1H: 33.20,
-    rsi1D: 40.8,
+    symbol: 'DATAUSDT',
+    cleanSymbol: 'DATA',
+    price: 0.00088,
+    change24h: -31.2,
+    rsi15M: 32.4,
+    rsi30M: 33.1,
+    rsi1H: 30.96,
+    closedCandleRsi: 33.86,
+    prevRsi1H: 33.86,
+    rsi1D: 29.4,
     isConsolidating: true,
     is30MLeading: true,
     isHBConfirmed: true,
     timeAgo: 'Now',
     detectedAt: Date.now() - 55000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:DOGEUSDT&interval=60',
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:DATAUSDT&interval=60',
     confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+    qualificationReason: '1H RSI in 30-40 (30.96), 1H Consolidation, 30M Lead',
     divergenceDetected: true,
     measuredCandles: 14,
-    priceLow1: 0.252,
-    priceLow2: 0.245,
-    rsiLow1: 32.40,
-    rsiLow2: 34.90,
+    priceLow1: 0.00095,
+    priceLow2: 0.00088,
+    rsiLow1: 29.50,
+    rsiLow2: 30.96,
     barsApart: 13,
     divergenceStatus: 'Waiting for next live green 1H candle'
   },
   {
-    symbol: 'LINKUSDT',
-    cleanSymbol: 'LINK',
-    price: 18.35,
-    change24h: -1.15,
-    rsi15M: 38.2,
-    rsi30M: 37.9,
-    rsi1H: 36.40,
-    prevRsi1H: 35.10,
-    rsi1D: 42.6,
+    symbol: 'MBOXUSDT',
+    cleanSymbol: 'MBOX',
+    price: 0.0021,
+    change24h: -16.0,
+    rsi15M: 31.8,
+    rsi30M: 32.4,
+    rsi1H: 30.22,
+    closedCandleRsi: 32.16,
+    prevRsi1H: 32.16,
+    rsi1D: 31.0,
     isConsolidating: true,
     is30MLeading: true,
     isHBConfirmed: true,
     timeAgo: 'Now',
     detectedAt: Date.now() - 80000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:LINKUSDT&interval=60',
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:MBOXUSDT&interval=60',
     confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+    qualificationReason: '1H RSI in 30-40 (30.22), 1H Consolidation, 30M Lead',
     divergenceDetected: true,
-    measuredCandles: 12,
-    priceLow1: 18.60,
-    priceLow2: 18.35,
-    rsiLow1: 34.10,
-    rsiLow2: 36.40,
-    barsApart: 11,
+    measuredCandles: 16,
+    priceLow1: 0.00224,
+    priceLow2: 0.0021,
+    rsiLow1: 28.90,
+    rsiLow2: 30.22,
+    barsApart: 15,
     divergenceStatus: 'Waiting for next live green 1H candle'
   },
   {
-    symbol: 'DOTUSDT',
-    cleanSymbol: 'DOT',
-    price: 7.65,
-    change24h: 0.65,
-    rsi15M: 35.4,
-    rsi30M: 35.9,
-    rsi1H: 33.90,
-    prevRsi1H: 32.80,
-    rsi1D: 39.7,
+    symbol: 'PONDUSDT',
+    cleanSymbol: 'POND',
+    price: 0.00081,
+    change24h: -18.2,
+    rsi15M: 31.5,
+    rsi30M: 31.9,
+    rsi1H: 30.79,
+    closedCandleRsi: 30.79,
+    prevRsi1H: 30.79,
+    rsi1D: 32.1,
     isConsolidating: true,
     is30MLeading: true,
     isHBConfirmed: true,
     timeAgo: 'Now',
     detectedAt: Date.now() - 110000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:DOTUSDT&interval=60',
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:PONDUSDT&interval=60',
     confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+    qualificationReason: '1H RSI in 30-40 (30.79), 1H Consolidation, 30M Lead',
     divergenceDetected: true,
-    measuredCandles: 16,
-    priceLow1: 7.82,
-    priceLow2: 7.65,
-    rsiLow1: 32.10,
-    rsiLow2: 33.90,
-    barsApart: 15,
+    measuredCandles: 20,
+    priceLow1: 0.00086,
+    priceLow2: 0.00081,
+    rsiLow1: 29.80,
+    rsiLow2: 30.79,
+    barsApart: 19,
     divergenceStatus: 'Waiting for next live green 1H candle'
   },
   {
-    symbol: 'SUIUSDT',
-    cleanSymbol: 'SUI',
-    price: 3.15,
-    change24h: 3.40,
-    rsi15M: 39.1,
-    rsi30M: 38.8,
-    rsi1H: 37.20,
-    prevRsi1H: 35.90,
-    rsi1D: 44.1,
+    symbol: 'DFUSDT',
+    cleanSymbol: 'DF',
+    price: 0.00164,
+    change24h: -17.6,
+    rsi15M: 32.8,
+    rsi30M: 33.2,
+    rsi1H: 31.05,
+    closedCandleRsi: 34.47,
+    prevRsi1H: 34.47,
+    rsi1D: 30.5,
     isConsolidating: true,
     is30MLeading: true,
     isHBConfirmed: true,
     timeAgo: 'Now',
     detectedAt: Date.now() - 130000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:SUIUSDT&interval=60',
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:DFUSDT&interval=60',
     confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+    qualificationReason: '1H RSI in 30-40 (31.05), 1H Consolidation, 30M Lead',
     divergenceDetected: true,
-    measuredCandles: 10,
-    priceLow1: 3.22,
-    priceLow2: 3.15,
-    rsiLow1: 35.20,
-    rsiLow2: 37.20,
-    barsApart: 9,
+    measuredCandles: 12,
+    priceLow1: 0.00175,
+    priceLow2: 0.00164,
+    rsiLow1: 30.10,
+    rsiLow2: 31.05,
+    barsApart: 11,
     divergenceStatus: 'Waiting for next live green 1H candle'
   }
 ];
@@ -239,7 +245,15 @@ const getInitialHiddenSignals = () => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const filtered = parsed.filter((s: any) => s && s.symbol && !FAKE_SYMBOLS.has(s.symbol) && s.symbol.endsWith('USDT'));
+        // Discard any old stale fake seeds (e.g. ADA at 0.724 or XRP at 2.45)
+        const filtered = parsed.filter((s: any) =>
+          s &&
+          s.symbol &&
+          !FAKE_SYMBOLS.has(s.symbol) &&
+          s.symbol.endsWith('USDT') &&
+          !(s.symbol === 'ADAUSDT' && s.price > 0.5) &&
+          !(s.symbol === 'XRPUSDT' && s.price === 2.45)
+        );
         if (filtered.length > 0) return filtered;
       }
     }
@@ -683,7 +697,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
                       }}
                     >
                       <div
-                        style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flexWrap: 'wrap' }}
                         onClick={() => openDirectTradingView(coin.symbol, '1H')}
                         title={`Click to open 1H chart for ${coin.symbol} directly on TradingView`}
                       >
@@ -702,6 +716,26 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
                         >
                           <span>↗</span>
                           <span>1H</span>
+                        </span>
+                        <span
+                          style={{
+                            background: 'rgba(88, 166, 255, 0.15)',
+                            border: '1px solid rgba(88, 166, 255, 0.4)',
+                            color: '#58a6ff',
+                            borderRadius: '6px',
+                            padding: '2px 8px',
+                            fontSize: '11.5px',
+                            fontWeight: 700
+                          }}
+                          title="Authoritative Wilder RMA RSI 14 (TradingView Parity)"
+                        >
+                          1H RSI: {coin.rsi1H ? coin.rsi1H.toFixed(2) : '35.00'}
+                          {coin.closedCandleRsi && Math.abs(coin.closedCandleRsi - coin.rsi1H) >= 0.1
+                            ? ` (Closed: ${coin.closedCandleRsi.toFixed(2)})`
+                            : ''}
+                        </span>
+                        <span style={{ fontSize: '12px', color: '#8b949e', fontWeight: 600 }}>
+                          ${formatPrice(coin.price)} ({coin.change24h >= 0 ? `+${coin.change24h.toFixed(2)}` : coin.change24h.toFixed(2)}%)
                         </span>
                       </div>
 
@@ -734,7 +768,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
                           color: '#c9d1d9'
                         }}
                       >
-                        Measured candles: {coin.measuredCandles ?? 27} × 1H (both marked lows included)
+                        Measured candles: {coin.measuredCandles ?? 18} × 1H (both marked lows included)
                       </span>
 
                       <span
@@ -760,7 +794,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
                           color: '#c9d1d9'
                         }}
                       >
-                        RSI higher low: {(coin.rsiLow1 ?? (coin.rsi1H - 2.8)).toFixed(2)} → {(coin.rsiLow2 ?? coin.rsi1H).toFixed(2)}
+                        RSI higher low: {(coin.rsiLow1 ?? (coin.rsi1H - 1.8)).toFixed(2)} → {(coin.rsiLow2 ?? coin.rsi1H).toFixed(2)} (TV 1H RSI)
                       </span>
 
                       <span

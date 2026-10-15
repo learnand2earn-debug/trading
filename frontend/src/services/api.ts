@@ -88,6 +88,7 @@ export interface HiddenCandidateSignal {
   rsi15M: number;
   rsi30M: number;
   rsi1H: number;
+  closedCandleRsi?: number;
   prevRsi1H: number;
   rsi1D: number;
   isConsolidating: boolean;
@@ -116,6 +117,7 @@ export interface HiddenActiveCoin {
   price: number;
   change24h: number;
   rsi1H: number;
+  closedCandleRsi?: number;
   rsi30M: number;
   timeStr: string;
   tradingViewUrl?: string;

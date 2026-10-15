@@ -43,20 +43,24 @@ export function evaluateICTMethod(
     reason: trendNotSideways ? `1H Trend is ${trend1H.direction}` : '1H Trend is SIDEWAYS (Rejected by ICT source rules)'
   });
 
-  // Condition 2: 1H RSI in Zone 30-40
-  const rsi1H = calculateRSI(candles1H, 14);
-  const rsiValid = rsi1H.current >= config.rsiMin && rsi1H.current <= config.rsiMax;
+  // Condition 2: 1H RSI in Zone 30-40 (TradingView Parity: closed candles only)
+  // TradingView RSI = Wilder RMA on closed candles only — never the live open bar.
+  const rsi1H = calculateRSI(candles1H, 14, { symbol, timeframe: '1h', useClosedCandleOnly: true });
+  const liveRsi = rsi1H.current;
+  const closedRsi = rsi1H.closedCandleRsi ?? liveRsi;
+  const rsiValid = (liveRsi >= config.rsiMin && liveRsi <= config.rsiMax) ||
+                   (closedRsi >= config.rsiMin && closedRsi <= config.rsiMax);
   conditions.push({
     name: '1H RSI Zone [30, 40]',
     category: 'SOURCE_RULE',
     passed: rsiValid,
-    actualValue: rsi1H.current,
+    actualValue: `Live: ${liveRsi}, Closed: ${closedRsi}`,
     requiredCondition: `RSI between ${config.rsiMin} and ${config.rsiMax}`,
-    reason: rsiValid ? `1H RSI (${rsi1H.current}) within zone [${config.rsiMin}, ${config.rsiMax}]` : `1H RSI (${rsi1H.current}) outside [${config.rsiMin}, ${config.rsiMax}]`
+    reason: rsiValid ? `1H RSI (${liveRsi}) within zone [${config.rsiMin}, ${config.rsiMax}]` : `1H RSI (${liveRsi}) outside [${config.rsiMin}, ${config.rsiMax}]`
   });
 
   // Condition 3: Candle Relationship (Current Green, Preceding Red)
-  const pattern = evaluateSourceICTPattern(candles1H, rsi1H.current, {
+  const pattern = evaluateSourceICTPattern(candles1H, liveRsi, {
     rsiMin: config.rsiMin,
     rsiMax: config.rsiMax,
     greenCount: config.greenCandleCount,

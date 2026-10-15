@@ -453,11 +453,13 @@ class V1ScannerService {
             const klines = await this.fetchKlinesForSymbol(cand.symbol);
             if (!klines.candles1h || klines.candles1h.length < 15) return;
 
-            // 1. Authoritative Multi-Timeframe Wilder RSIs
-            const rsi1HResult = calculateRSI(klines.candles1h, 14, { symbol: cand.symbol, timeframe: '1h' });
-            const rsi30MResult = calculateRSI(klines.candles30m, 14, { symbol: cand.symbol, timeframe: '30m' });
-            const rsi15MResult = calculateRSI(klines.candles15m, 14, { symbol: cand.symbol, timeframe: '15m' });
-            const rsi1DResult = calculateRSI(klines.candles1d, 14, { symbol: cand.symbol, timeframe: '1d' });
+            // 1. Authoritative Multi-Timeframe Wilder RSIs (TradingView parity: closed candles only)
+            // TradingView always shows RSI of the last CLOSED bar — not the live open candle.
+            const rsiOpts = { useClosedCandleOnly: true };
+            const rsi1HResult = calculateRSI(klines.candles1h, 14, { symbol: cand.symbol, timeframe: '1h', ...rsiOpts });
+            const rsi30MResult = calculateRSI(klines.candles30m, 14, { symbol: cand.symbol, timeframe: '30m', ...rsiOpts });
+            const rsi15MResult = calculateRSI(klines.candles15m, 14, { symbol: cand.symbol, timeframe: '15m', ...rsiOpts });
+            const rsi1DResult = calculateRSI(klines.candles1d, 14, { symbol: cand.symbol, timeframe: '1d', ...rsiOpts });
 
             const rsi1H = rsi1HResult.current;
             const rsi30M = rsi30MResult.current;
