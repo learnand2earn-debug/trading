@@ -7,6 +7,7 @@ import { calculateRSI, evaluate30MLeadership } from '../indicators/rsi.js';
 import { calculateEMA } from '../indicators/ema.js';
 import { calculateV1SmoothedHeikenAshi } from '../indicators/v1.js';
 import { detectTrend } from '../indicators/trend.js';
+import { eventBus } from '../core/events.js';
 
 export interface V1CandidateSignal {
   symbol: string;
@@ -89,8 +90,8 @@ class V1ScannerService {
       this.scanV1Market({ fresh: true }).catch(() => {});
       setInterval(() => {
         this.scanV1Market({ fresh: true }).catch(() => {});
-      }, 25000);
-    }, 3000);
+      }, 12000);
+    }, 2000);
   }
 
   private initSeedSignals() {
@@ -550,7 +551,11 @@ class V1ScannerService {
               barsApart: 23
             };
 
+            const isNew = !this.detectedSignalsMap.has(cand.symbol);
             this.detectedSignalsMap.set(cand.symbol, { signal: signalObj, detectedAt });
+            if (isNew) {
+              eventBus.publish('V1_SIGNAL_DETECTED', signalObj, { symbol: cand.symbol });
+            }
           } else {
             // Retain previously detected signals and update their live price (do not discard valid setups)
             const existingSig = this.detectedSignalsMap.get(cand.symbol);

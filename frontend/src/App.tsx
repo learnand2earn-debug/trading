@@ -25,7 +25,7 @@ import { ScalpProLogin } from './components/ScalpProLogin.js';
 import { api, getAuthToken, UserProfile, wsManager } from './services/api.js';
 
 export const App: React.FC = () => {
-  const [currentRoute, setCurrentRoute] = useState('v1');
+  const [currentRoute, setCurrentRoute] = useState('dashboard');
   const [tradingMode, setTradingMode] = useState<'ANALYSIS' | 'PAPER' | 'LIVE'>('ANALYSIS');
   const [isEmergencyHalted, setIsEmergencyHalted] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);

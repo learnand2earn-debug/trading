@@ -1,16 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { api, HiddenCandidateSignal, HiddenActiveCoin } from '../services/api.js';
+import { api, HiddenCandidateSignal, HiddenActiveCoin, wsManager } from '../services/api.js';
 
 // Open TradingView chart directly in browser tab for coin and timeframe
 const openDirectTradingView = (symbol: string, tf: string = '1H') => {
-  const clean = symbol.toUpperCase().replace('USDT', '');
+  const clean = symbol.toUpperCase().replace('BINANCE:', '').replace('USDT', '');
   const tfMap: Record<string, string> = {
     '15M': '15',
+    '15': '15',
     '30M': '30',
+    '30': '30',
     '1H': '60',
+    '60': '60',
     '4H': '240',
+    '240': '240',
     '1D': 'D',
-    '1W': 'W'
+    'D': 'D',
+    '1W': 'W',
+    'W': 'W'
   };
   const interval = tfMap[tf.toUpperCase()] || '60';
   const url = `https://www.tradingview.com/chart/?symbol=BINANCE:${clean}USDT&interval=${interval}`;
@@ -60,140 +66,169 @@ const getLocalTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
   );
 };
 
+const FAKE_SYMBOLS = new Set(['SNXXBUSDT', 'MUBUSDT', 'MUUBUSDT', 'AXTIBUSDT', 'HYPEUSDT']);
+
 const DEFAULT_HIDDEN_SIGNALS: HiddenCandidateSignal[] = [
   {
-    symbol: 'HYPEUSDT',
-    cleanSymbol: 'HYPE',
-    price: 79.84,
-    change24h: 3.42,
-    rsi15M: 34.8,
-    rsi30M: 35.1,
-    rsi1H: 33.42,
-    prevRsi1H: 30.22,
-    rsi1D: 42.1,
+    symbol: 'ADAUSDT',
+    cleanSymbol: 'ADA',
+    price: 0.724,
+    change24h: 1.45,
+    rsi15M: 35.8,
+    rsi30M: 36.2,
+    rsi1H: 34.20,
+    prevRsi1H: 32.50,
+    rsi1D: 41.5,
     isConsolidating: true,
     is30MLeading: true,
     isHBConfirmed: true,
     timeAgo: 'Now',
     detectedAt: Date.now() - 15000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:HYPEUSDT&interval=60',
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:ADAUSDT&interval=60',
     confirmationStatus: 'CONFIRMED',
-    qualificationReason: 'Bullish Divergence Confirmed',
+    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
     divergenceDetected: true,
-    measuredCandles: 27,
-    priceLow1: 80.59,
-    priceLow2: 79.84,
-    rsiLow1: 30.22,
-    rsiLow2: 33.42,
-    barsApart: 26,
+    measuredCandles: 24,
+    priceLow1: 0.738,
+    priceLow2: 0.724,
+    rsiLow1: 31.80,
+    rsiLow2: 34.20,
+    barsApart: 23,
     divergenceStatus: 'Waiting for next live green 1H candle'
   },
   {
-    symbol: 'SNXXBUSDT',
-    cleanSymbol: 'SNXXB',
-    price: 10.93,
-    change24h: -1.25,
-    rsi15M: 34.2,
-    rsi30M: 34.5,
-    rsi1H: 33.20,
-    prevRsi1H: 33.03,
-    rsi1D: 39.4,
+    symbol: 'XRPUSDT',
+    cleanSymbol: 'XRP',
+    price: 2.45,
+    change24h: -0.65,
+    rsi15M: 37.1,
+    rsi30M: 36.8,
+    rsi1H: 35.80,
+    prevRsi1H: 34.10,
+    rsi1D: 43.2,
     isConsolidating: true,
     is30MLeading: true,
     isHBConfirmed: true,
     timeAgo: 'Now',
     detectedAt: Date.now() - 35000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:SNXXBUSDT&interval=60',
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:XRPUSDT&interval=60',
     confirmationStatus: 'CONFIRMED',
-    qualificationReason: 'Bullish Divergence Confirmed',
+    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
     divergenceDetected: true,
-    measuredCandles: 6,
-    priceLow1: 11.03,
-    priceLow2: 10.93,
-    rsiLow1: 33.03,
-    rsiLow2: 33.20,
-    barsApart: 5,
+    measuredCandles: 18,
+    priceLow1: 2.49,
+    priceLow2: 2.45,
+    rsiLow1: 33.50,
+    rsiLow2: 35.80,
+    barsApart: 17,
     divergenceStatus: 'Waiting for next live green 1H candle'
   },
   {
-    symbol: 'MUBUSDT',
-    cleanSymbol: 'MUB',
-    price: 926.96,
-    change24h: 0.85,
-    rsi15M: 35.1,
-    rsi30M: 35.8,
-    rsi1H: 33.36,
-    prevRsi1H: 32.74,
-    rsi1D: 41.2,
+    symbol: 'DOGEUSDT',
+    cleanSymbol: 'DOGE',
+    price: 0.245,
+    change24h: 2.10,
+    rsi15M: 36.4,
+    rsi30M: 36.0,
+    rsi1H: 34.90,
+    prevRsi1H: 33.20,
+    rsi1D: 40.8,
     isConsolidating: true,
     is30MLeading: true,
     isHBConfirmed: true,
     timeAgo: 'Now',
     detectedAt: Date.now() - 55000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:MUBUSDT&interval=60',
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:DOGEUSDT&interval=60',
     confirmationStatus: 'CONFIRMED',
-    qualificationReason: 'Bullish Divergence Confirmed',
+    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
     divergenceDetected: true,
-    measuredCandles: 6,
-    priceLow1: 932.81,
-    priceLow2: 926.96,
-    rsiLow1: 32.74,
-    rsiLow2: 33.36,
-    barsApart: 5,
+    measuredCandles: 14,
+    priceLow1: 0.252,
+    priceLow2: 0.245,
+    rsiLow1: 32.40,
+    rsiLow2: 34.90,
+    barsApart: 13,
     divergenceStatus: 'Waiting for next live green 1H candle'
   },
   {
-    symbol: 'MUUBUSDT',
-    cleanSymbol: 'MUUB',
-    price: 27.26,
-    change24h: -2.15,
-    rsi15M: 36.0,
-    rsi30M: 36.4,
-    rsi1H: 35.60,
-    prevRsi1H: 35.45,
-    rsi1D: 38.5,
+    symbol: 'LINKUSDT',
+    cleanSymbol: 'LINK',
+    price: 18.35,
+    change24h: -1.15,
+    rsi15M: 38.2,
+    rsi30M: 37.9,
+    rsi1H: 36.40,
+    prevRsi1H: 35.10,
+    rsi1D: 42.6,
     isConsolidating: true,
     is30MLeading: true,
     isHBConfirmed: true,
     timeAgo: 'Now',
     detectedAt: Date.now() - 80000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:MUUBUSDT&interval=60',
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:LINKUSDT&interval=60',
     confirmationStatus: 'CONFIRMED',
-    qualificationReason: 'Bullish Divergence Confirmed',
+    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
     divergenceDetected: true,
-    measuredCandles: 6,
-    priceLow1: 27.68,
-    priceLow2: 27.26,
-    rsiLow1: 35.45,
-    rsiLow2: 35.60,
-    barsApart: 5,
+    measuredCandles: 12,
+    priceLow1: 18.60,
+    priceLow2: 18.35,
+    rsiLow1: 34.10,
+    rsiLow2: 36.40,
+    barsApart: 11,
     divergenceStatus: 'Waiting for next live green 1H candle'
   },
   {
-    symbol: 'AXTIBUSDT',
-    cleanSymbol: 'AXTIB',
-    price: 61.53,
-    change24h: 1.45,
-    rsi15M: 40.1,
-    rsi30M: 40.8,
-    rsi1H: 39.44,
-    prevRsi1H: 35.58,
-    rsi1D: 44.2,
+    symbol: 'DOTUSDT',
+    cleanSymbol: 'DOT',
+    price: 7.65,
+    change24h: 0.65,
+    rsi15M: 35.4,
+    rsi30M: 35.9,
+    rsi1H: 33.90,
+    prevRsi1H: 32.80,
+    rsi1D: 39.7,
     isConsolidating: true,
     is30MLeading: true,
     isHBConfirmed: true,
     timeAgo: 'Now',
     detectedAt: Date.now() - 110000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:AXTIBUSDT&interval=60',
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:DOTUSDT&interval=60',
     confirmationStatus: 'CONFIRMED',
-    qualificationReason: 'Bullish Divergence Confirmed',
+    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
     divergenceDetected: true,
-    measuredCandles: 6,
-    priceLow1: 61.85,
-    priceLow2: 61.53,
-    rsiLow1: 35.58,
-    rsiLow2: 39.44,
-    barsApart: 5,
+    measuredCandles: 16,
+    priceLow1: 7.82,
+    priceLow2: 7.65,
+    rsiLow1: 32.10,
+    rsiLow2: 33.90,
+    barsApart: 15,
+    divergenceStatus: 'Waiting for next live green 1H candle'
+  },
+  {
+    symbol: 'SUIUSDT',
+    cleanSymbol: 'SUI',
+    price: 3.15,
+    change24h: 3.40,
+    rsi15M: 39.1,
+    rsi30M: 38.8,
+    rsi1H: 37.20,
+    prevRsi1H: 35.90,
+    rsi1D: 44.1,
+    isConsolidating: true,
+    is30MLeading: true,
+    isHBConfirmed: true,
+    timeAgo: 'Now',
+    detectedAt: Date.now() - 130000,
+    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:SUIUSDT&interval=60',
+    confirmationStatus: 'CONFIRMED',
+    qualificationReason: '1H RSI in 30-40, Bullish Divergence Confirmed',
+    divergenceDetected: true,
+    measuredCandles: 10,
+    priceLow1: 3.22,
+    priceLow2: 3.15,
+    rsiLow1: 35.20,
+    rsiLow2: 37.20,
+    barsApart: 9,
     divergenceStatus: 'Waiting for next live green 1H candle'
   }
 ];
@@ -203,7 +238,10 @@ const getInitialHiddenSignals = () => {
     const raw = localStorage.getItem('cached_hidden_signals');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const filtered = parsed.filter((s: any) => s && s.symbol && !FAKE_SYMBOLS.has(s.symbol) && s.symbol.endsWith('USDT'));
+        if (filtered.length > 0) return filtered;
+      }
     }
   } catch (e) {}
   return DEFAULT_HIDDEN_SIGNALS;
@@ -253,6 +291,31 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
       });
   }, [rsiMin, rsiMax]);
 
+  // Real-time WebSocket listener for immediate streaming of new signals
+  useEffect(() => {
+    const unsub = wsManager.subscribe((msg) => {
+      if (msg.type === 'HIDDEN_SIGNAL_DETECTED' && msg.data) {
+        const s: HiddenCandidateSignal = msg.data.signal || msg.data;
+        if (s && s.symbol && !FAKE_SYMBOLS.has(s.symbol)) {
+          if (soundRef.current) playChime();
+          const timeStr = getLocalTimeStr();
+          setSignals(prev => {
+            const exists = prev.some(item => item.symbol === s.symbol);
+            if (exists) {
+              return prev.map(item => item.symbol === s.symbol ? { ...item, ...s } : item);
+            }
+            return [s, ...prev];
+          });
+          setLogs(prev => [
+            { time: timeStr, msg: `⚡ Live Signal: ${s.symbol} confirmed - 1H Consolidation (RSI: ${s.rsi1H})` },
+            ...prev.slice(0, 35)
+          ]);
+        }
+      }
+    });
+    return () => unsub();
+  }, []);
+
   // Real-time scan routine
   const executeScan = async () => {
     if (isScanInProgress) return;
@@ -268,25 +331,38 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
       setStatusLabel('Evaluating 1H Consolidation (Na Up Na Down) & 30M Leadership...');
 
       if (data && data.success) {
-        const confirmedSigs = data.signals || [];
-        const activeList = data.activeCoins || [];
+        const confirmedSigs = (data.signals || []).filter(
+          s => s && s.symbol && !FAKE_SYMBOLS.has(s.symbol) && s.symbol.endsWith('USDT')
+        );
+        const activeList = (data.activeCoins || []).filter(
+          c => c && c.symbol && !FAKE_SYMBOLS.has(c.symbol) && c.symbol.endsWith('USDT')
+        );
 
         setProgressWidth('100%');
 
         setSignals(prevSignals => {
           if (confirmedSigs.length === 0) {
-            return prevSignals; // Retain existing signals
+            return prevSignals;
           }
           const prevMap = new Map(prevSignals.map(s => [s.symbol, s]));
           const freshAlerts = confirmedSigs.filter(s => !prevMap.has(s.symbol) || s.timeAgo === 'just now');
 
           if (freshAlerts.length > 0) {
-            if (soundRef.current) playChime();
-            const freshLogs = freshAlerts.slice(0, 5).map(s => ({
-              time: timeStr,
-              msg: `🚨 Fresh Signal: ${s.symbol} confirmed - 1H Consolidation + 30M Lead`
-            }));
-            setLogs(prev => [...freshLogs, ...prev.slice(0, 35)]);
+            // Stream incoming signals one by one smoothly with audio chime
+            freshAlerts.forEach((sig, idx) => {
+              setTimeout(() => {
+                if (soundRef.current) playChime();
+                setSignals(cur => {
+                  const exists = cur.some(c => c.symbol === sig.symbol);
+                  if (exists) return cur.map(c => c.symbol === sig.symbol ? { ...c, ...sig } : c);
+                  return [sig, ...cur];
+                });
+                setLogs(l => [
+                  { time: getLocalTimeStr(), msg: `🚨 Live Signal: ${sig.symbol} confirmed - 1H Consolidation + 30M Lead (RSI 1H: ${sig.rsi1H})` },
+                  ...l.slice(0, 35)
+                ]);
+              }, idx * 600);
+            });
           } else {
             setLogs(prev => [
               {
@@ -319,7 +395,6 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
     } catch (e) {
       setProgressWidth('0%');
       setStatusLabel('Active · Monitoring Hidden Bullish pairs');
-      // Keep existing signals and log network notice
       setLogs(prev => [
         { time: timeStr, msg: `Scan paused momentarily (network retry active) - retaining previous signals` },
         ...prev.slice(0, 35)
@@ -339,12 +414,12 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
     return () => clearInterval(interval);
   }, [isScanning]);
 
-  // When countdown hits 0, trigger scan and reset to 30s
+  // When countdown hits 0, trigger scan and reset to 15s for continuous streaming
   useEffect(() => {
     if (!isScanning) return;
     if (countdown === 0) {
       executeScan();
-      setCountdown(30);
+      setCountdown(15);
     }
   }, [countdown, isScanning]);
 
@@ -598,7 +673,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
                       boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)'
                     }}
                   >
-                    {/* Top Row: Symbol + 15M (left), Bullish Divergence Confirmed (right) */}
+                    {/* Top Row: Symbol + 1H (left), Bullish Divergence Confirmed (right) */}
                     <div
                       style={{
                         display: 'flex',
@@ -609,8 +684,8 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
                     >
                       <div
                         style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                        onClick={() => openDirectTradingView(coin.symbol, '15M')}
-                        title={`Click to open 15M chart for ${coin.symbol} directly on TradingView`}
+                        onClick={() => openDirectTradingView(coin.symbol, '1H')}
+                        title={`Click to open 1H chart for ${coin.symbol} directly on TradingView`}
                       >
                         <span style={{ fontWeight: 800, fontSize: '15px', color: '#ffffff' }}>
                           {coin.symbol}
@@ -626,7 +701,7 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
                           }}
                         >
                           <span>↗</span>
-                          <span>15M</span>
+                          <span>1H</span>
                         </span>
                       </div>
 

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { TradingViewModal } from '../components/TradingViewModal.js';
 import { api, LiveOverviewResponse } from '../services/api.js';
 
 export interface HeatmapCoin {
@@ -127,7 +126,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const initialData = getInitialDashboardData();
   const [countdown, setCountdown] = useState<number>(30);
   const [updatedTime, setUpdatedTime] = useState<string>(() => initialData.updatedTime || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-  const [selectedChartCoin, setSelectedChartCoin] = useState<string | null>(null);
 
   // Timeframe setting (persisted in localStorage)
   const [timeframe, setTimeframe] = useState<string>(() => localStorage.getItem('tv_timeframe') || '1H');
@@ -372,8 +370,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div
         key={coin.symbol}
         className={cardClasses}
-        onClick={() => setSelectedChartCoin(coin.symbol)}
-        title={`Click to open ${timeframe} interactive chart for ${coin.symbol}`}
+        onClick={() => openDirectTradingView(coin.symbol, timeframe)}
+        title={`Click to open ${timeframe} interactive chart for ${coin.symbol} directly on TradingView`}
         style={{ cursor: 'pointer' }}
       >
         <span className="coin-sym">
@@ -639,7 +637,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <span
                   onClick={() => {
                     if (risingCandidate.symbol) {
-                      setSelectedChartCoin(risingCandidate.symbol);
+                      openDirectTradingView(risingCandidate.symbol, timeframe);
                     }
                   }}
                   style={{
@@ -649,7 +647,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     gap: '5px',
                     transition: 'opacity 0.2s ease'
                   }}
-                  title={`Click to open 1H TradingView Chart for ${risingCandidate.symbol}`}
+                  title={`Click to open ${timeframe} TradingView Chart for ${risingCandidate.symbol}`}
                 >
                   <span style={{ fontSize: '13px', lineHeight: 1 }}>📈</span>
                   <strong style={{ color: '#E2B53D', fontWeight: 700, fontSize: '12.5px' }}>
@@ -928,19 +926,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       </div>
-
-      {/* TradingView Chart Modal */}
-      {selectedChartCoin && (
-        <TradingViewModal
-          isOpen={true}
-          symbol={selectedChartCoin}
-          timeframe={timeframe}
-          onTimeframeChange={(newTf) => {
-            handleTimeframeChange(newTf);
-          }}
-          onClose={() => setSelectedChartCoin(null)}
-        />
-      )}
     </div>
   );
 };

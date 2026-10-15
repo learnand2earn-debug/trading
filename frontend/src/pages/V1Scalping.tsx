@@ -1,16 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { api, V1CandidateSignal, V1ActiveCoin } from '../services/api.js';
+import { api, V1CandidateSignal, V1ActiveCoin, wsManager } from '../services/api.js';
 
 // Open TradingView chart directly in browser tab for coin and timeframe
 const openDirectTradingView = (symbol: string, tf: string = '1H') => {
-  const clean = symbol.toUpperCase().replace('USDT', '');
+  const clean = symbol.toUpperCase().replace('BINANCE:', '').replace('USDT', '');
   const tfMap: Record<string, string> = {
     '15M': '15',
+    '15': '15',
     '30M': '30',
+    '30': '30',
     '1H': '60',
+    '60': '60',
     '4H': '240',
+    '240': '240',
     '1D': 'D',
-    '1W': 'W'
+    'D': 'D',
+    '1W': 'W',
+    'W': 'W'
   };
   const interval = tfMap[tf.toUpperCase()] || '60';
   const url = `https://www.tradingview.com/chart/?symbol=BINANCE:${clean}USDT&interval=${interval}`;
@@ -194,12 +200,17 @@ const DEFAULT_V1_SIGNALS: V1CandidateSignal[] = [
   }
 ];
 
+const FAKE_SYMBOLS = new Set(['SNXXBUSDT', 'MUBUSDT', 'MUUBUSDT', 'AXTIBUSDT', 'HYPEUSDT']);
+
 const getInitialV1Signals = () => {
   try {
     const raw = localStorage.getItem('cached_v1_signals');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const filtered = parsed.filter((s: any) => s && s.symbol && !FAKE_SYMBOLS.has(s.symbol) && s.symbol.endsWith('USDT'));
+        if (filtered.length > 0) return filtered;
+      }
     }
   } catch (e) {}
   return DEFAULT_V1_SIGNALS;
@@ -208,7 +219,7 @@ const getInitialV1Signals = () => {
 export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => {
   const [isScanning, setIsScanning] = useState(true);
   const [isScanInProgress, setIsScanInProgress] = useState(false);
-  const [countdown, setCountdown] = useState<number>(30);
+  const [countdown, setCountdown] = useState<number>(15);
   const [soundOn, setSoundOn] = useState(true);
   const [rsiMin, setRsiMin] = useState<number>(50);
   const [rsiMax, setRsiMax] = useState<number>(60);
@@ -250,6 +261,31 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
       });
   }, []);
 
+  // Real-time WebSocket listener for immediate streaming of new V1 signals
+  useEffect(() => {
+    const unsub = wsManager.subscribe((msg) => {
+      if (msg.type === 'V1_SIGNAL_DETECTED' && msg.data) {
+        const s: V1CandidateSignal = msg.data.signal || msg.data;
+        if (s && s.symbol) {
+          if (soundRef.current) playChime();
+          const timeStr = getLocalTimeStr();
+          setSignals(prev => {
+            const exists = prev.some(item => item.symbol === s.symbol);
+            if (exists) {
+              return prev.map(item => item.symbol === s.symbol ? { ...item, ...s } : item);
+            }
+            return [s, ...prev];
+          });
+          setLogs(prev => [
+            { time: timeStr, msg: `⚡ Live Signal: ${s.symbol} confirmed in V1 Zone (RSI 1H: ${s.rsi1H})` },
+            ...prev.slice(0, 35)
+          ]);
+        }
+      }
+    });
+    return () => unsub();
+  }, []);
+
   // Execution scan routine
   const executeScan = async () => {
     if (isScanInProgress) return;
@@ -262,18 +298,27 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
 
         setSignals(prevSignals => {
           if (newSignals.length === 0) {
-            return prevSignals; // Retain existing signals
+            return prevSignals;
           }
           const prevMap = new Map(prevSignals.map(s => [s.symbol, s]));
           const freshAlerts = newSignals.filter(s => !prevMap.has(s.symbol) || s.timeAgo === 'just now');
 
           if (freshAlerts.length > 0) {
-            if (soundRef.current) playChime();
-            const freshLogs = freshAlerts.slice(0, 5).map(s => ({
-              time: timeStr,
-              msg: `⚡ Fresh Signal: ${s.symbol} confirmed in V1 Zone (RSI 1H: ${s.rsi1H})`
-            }));
-            setLogs(prev => [...freshLogs, ...prev.slice(0, 35)]);
+            // Stream incoming signals one by one smoothly with audio chime
+            freshAlerts.forEach((sig, idx) => {
+              setTimeout(() => {
+                if (soundRef.current) playChime();
+                setSignals(cur => {
+                  const exists = cur.some(c => c.symbol === sig.symbol);
+                  if (exists) return cur.map(c => c.symbol === sig.symbol ? { ...c, ...sig } : c);
+                  return [sig, ...cur];
+                });
+                setLogs(l => [
+                  { time: getLocalTimeStr(), msg: `⚡ Live Signal: ${sig.symbol} confirmed in V1 Zone (RSI 1H: ${sig.rsi1H})` },
+                  ...l.slice(0, 35)
+                ]);
+              }, idx * 600);
+            });
           } else {
             setLogs(prev => [
               { time: timeStr, msg: `V1 scan complete - ${newSignals.length} active setups verified on Binance` },
@@ -318,12 +363,12 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
     return () => clearInterval(interval);
   }, [isScanning]);
 
-  // When countdown hits 0, trigger scan and reset to 30s
+  // When countdown hits 0, trigger scan and reset to 15s for continuous streaming
   useEffect(() => {
     if (!isScanning) return;
     if (countdown === 0) {
       executeScan();
-      setCountdown(30);
+      setCountdown(15);
     }
   }, [countdown, isScanning]);
 
@@ -582,7 +627,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)'
                   }}
                 >
-                  {/* Top Row: Symbol + 15M (left), V1 Scalping Confirmed (right) */}
+                  {/* Top Row: Symbol + 1H (left), V1 Scalping Confirmed (right) */}
                   <div
                     style={{
                       display: 'flex',
@@ -593,8 +638,8 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
                   >
                     <div
                       style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                      onClick={() => openDirectTradingView(coin.symbol, '15M')}
-                      title={`Click to open 15M chart for ${coin.symbol} directly on TradingView`}
+                      onClick={() => openDirectTradingView(coin.symbol, '1H')}
+                      title={`Click to open 1H chart for ${coin.symbol} directly on TradingView`}
                     >
                       <span style={{ fontWeight: 800, fontSize: '15px', color: '#ffffff' }}>
                         {coin.symbol}
@@ -610,7 +655,7 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
                         }}
                       >
                         <span>↗</span>
-                        <span>15M</span>
+                        <span>1H</span>
                       </span>
                     </div>
 

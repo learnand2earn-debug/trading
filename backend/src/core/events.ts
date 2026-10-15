@@ -22,7 +22,9 @@ export type EventType =
   | 'TRADE_CLOSED'
   | 'ERROR'
   | 'DATA_STALE'
-  | 'EMERGENCY_STOP';
+  | 'EMERGENCY_STOP'
+  | 'V1_SIGNAL_DETECTED'
+  | 'HIDDEN_SIGNAL_DETECTED';
 
 export interface SystemEvent<T = any> {
   event_id: string;
