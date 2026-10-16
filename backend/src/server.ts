@@ -130,30 +130,36 @@ async function startAutomatedScannerLoop() {
     notifyInfo(`🚀 ApexCrypto Pro started.\n📊 Monitoring ${symbols.length} symbols\n7 Strategies active`).catch(() => {});
   }
 
-  // Connect Binance WebSocket for live streaming
-  binanceService.connectWebSocket(symbols, ['15m', '30m', '1h', '1d']);
+  // Connect Binance WebSocket for live streaming across all active dashboard timeframes
+  binanceService.connectWebSocket(symbols, ['15m', '30m', '1h', '4h', '1d']);
   binanceService.setCandleListener((symbol, timeframe, candle) => {
     candleStore.updateCandle(symbol, timeframe, candle);
     executionEngine.updateMarketPrice(symbol, candle.close);
   });
 
-  // Pre-seed initial candle history gently for core symbols only
+  // Pre-seed initial candle history gently for core symbols across all timeframes
   for (const sym of coreSymbols) {
     if (isBinanceCircuitBreakerActive()) {
       console.log('[Scanner] Binance circuit breaker active, skipping initial candle pre-seed.');
       break;
     }
     try {
-      const [k1h, k1d] = await Promise.all([
-        binanceService.fetchKlines(sym, '1h', 200),
-        binanceService.fetchKlines(sym, '1d', 200)
+      const [k15m, k30m, k1h, k4h, k1d] = await Promise.all([
+        binanceService.fetchKlines(sym, '15m', 150).catch(() => []),
+        binanceService.fetchKlines(sym, '30m', 150).catch(() => []),
+        binanceService.fetchKlines(sym, '1h', 150).catch(() => []),
+        binanceService.fetchKlines(sym, '4h', 150).catch(() => []),
+        binanceService.fetchKlines(sym, '1d', 150).catch(() => [])
       ]);
 
-      candleStore.setCandles(sym, '1h', k1h);
-      candleStore.setCandles(sym, '1d', k1d);
+      if (k15m.length > 0) candleStore.setCandles(sym, '15m', k15m);
+      if (k30m.length > 0) candleStore.setCandles(sym, '30m', k30m);
+      if (k1h.length > 0) candleStore.setCandles(sym, '1h', k1h);
+      if (k4h.length > 0) candleStore.setCandles(sym, '4h', k4h);
+      if (k1d.length > 0) candleStore.setCandles(sym, '1d', k1d);
 
       // Pacing pause between symbols to eliminate burst rate limits
-      await new Promise(r => setTimeout(r, 250));
+      await new Promise(r => setTimeout(r, 200));
     } catch (e: any) {
       console.warn(`[Scanner] Initial seed notice for ${sym}:`, e.message);
     }

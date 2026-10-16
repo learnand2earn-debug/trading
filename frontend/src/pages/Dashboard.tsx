@@ -103,9 +103,10 @@ const DEFAULT_DASHBOARD_DATA = {
   }
 };
 
-const getInitialDashboardData = () => {
+const getInitialDashboardData = (tf?: string) => {
   try {
-    const raw = localStorage.getItem('cached_dashboard_data');
+    const targetTf = (tf || localStorage.getItem('tv_timeframe') || '1H').toUpperCase();
+    const raw = localStorage.getItem(`cached_dashboard_data_${targetTf}`) || localStorage.getItem('cached_dashboard_data');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
@@ -181,6 +182,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const formatted = newTf.toUpperCase();
     setTimeframe(formatted);
     localStorage.setItem('tv_timeframe', formatted);
+
+    // Immediately display saved snapshot for newly selected timeframe if available
+    const tfSnap = getInitialDashboardData(formatted);
+    if (tfSnap) {
+      if (tfSnap.gainers && tfSnap.gainers.length > 0) setGainers(tfSnap.gainers);
+      if (tfSnap.v1Coins && tfSnap.v1Coins.length > 0) setV1Coins(tfSnap.v1Coins);
+      if (tfSnap.neutral && tfSnap.neutral.length > 0) setNeutral(tfSnap.neutral);
+      if (tfSnap.hiddenBull && tfSnap.hiddenBull.length > 0) setHiddenBull(tfSnap.hiddenBull);
+      if (tfSnap.oversold && tfSnap.oversold.length > 0) setOversold(tfSnap.oversold);
+      if (tfSnap.extreme && tfSnap.extreme.length > 0) setExtreme(tfSnap.extreme);
+    }
+
     fetchAndUpdateLiveMarket(formatted, true);
     setSaveStatus(`✓ Set to ${formatted}`);
     setTimeout(() => setSaveStatus(''), 2500);
@@ -188,7 +201,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Pull live market changes from Binance and update all dashboard components calmly every 30 seconds
   const fetchAndUpdateLiveMarket = async (tf?: string, forceFresh: boolean = false) => {
-    const currentTf = tf || timeframe;
+    const currentTf = (tf || timeframe).toUpperCase();
     try {
       let overview: LiveOverviewResponse | null = null;
       try {
@@ -217,6 +230,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
             extreme: []
           };
 
+          let posWeight = 36;
+          let chgWeight = 1.2;
+          const lowerTf = currentTf.toLowerCase();
+          if (lowerTf === '15m') {
+            posWeight = 48;
+            chgWeight = 1.6;
+          } else if (lowerTf === '30m') {
+            posWeight = 42;
+            chgWeight = 1.4;
+          } else if (lowerTf === '4h') {
+            posWeight = 30;
+            chgWeight = 1.0;
+          } else if (lowerTf === '1d') {
+            posWeight = 24;
+            chgWeight = 0.8;
+          }
+
           for (const t of data) {
             if (
               t.symbol &&
@@ -238,7 +268,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               const low = parseFloat(t.lowPrice || '0');
               const range = high - low;
               const pos = range > 0 ? (price - low) / range : 0.5;
-              const estRsi = Math.max(12, Math.min(92, 50 + (pos - 0.5) * 36 + Math.max(-25, Math.min(25, change24h * 1.2))));
+              const estRsi = Math.max(12, Math.min(92, 50 + (pos - 0.5) * posWeight + Math.max(-28, Math.min(28, change24h * chgWeight))));
               const coinDto: HeatmapCoin = {
                 symbol: cleanSym,
                 rsi1H: parseFloat(estRsi.toFixed(1)),
@@ -324,7 +354,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         // Cache persistent snapshot so reload NEVER causes delay or missing coins
         try {
-          localStorage.setItem('cached_dashboard_data', JSON.stringify({
+          const snapshotPayload = JSON.stringify({
             gainers: (z.gainers && z.gainers.length > 0) ? z.gainers : gainers,
             v1Coins: (z.v1 && z.v1.length > 0) ? z.v1 : v1Coins,
             neutral: (z.neutral && z.neutral.length > 0) ? z.neutral : neutral,
@@ -334,7 +364,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
             topMovers: overview?.topMovers || topMovers,
             marketSentiment: currentSentiment,
             updatedTime: nowTime
-          }));
+          });
+          localStorage.setItem(`cached_dashboard_data_${currentTf}`, snapshotPayload);
+          localStorage.setItem('cached_dashboard_data', snapshotPayload);
         } catch (e) {}
       }
     } catch (e) {

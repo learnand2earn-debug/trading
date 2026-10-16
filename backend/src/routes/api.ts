@@ -39,7 +39,7 @@ import {
   AuthUser,
   AuthenticatedRequest
 } from '../security/auth.js';
-import { binanceDiscoveryService, EXCLUDED_STABLECOINS } from '../market-data/binanceDiscovery.js';
+import { binanceDiscoveryService, EXCLUDED_STABLECOINS, FAKE_OR_DELISTED_SYMBOLS } from '../market-data/binanceDiscovery.js';
 import { detectHiddenBullishDivergence } from '../indicators/divergence.js';
 import { v1ScannerService } from '../market-data/v1ScannerService.js';
 import { hiddenScannerService } from '../market-data/hiddenScannerService.js';
@@ -918,22 +918,31 @@ function getRsiForSymbol(
   // 4. Queue immediate background fetch for this symbol & timeframe with 150 candles
   fetchAndStoreKlines(symbol, tf.toLowerCase(), 150).catch(() => {});
 
-  // 5. If requested timeframe is warming up, check if 1h authoritative candles exist
-  if (tf.toLowerCase() !== '1h') {
-    const candles1h = candleStore.getCandles(symbol, '1h');
-    if (candles1h && candles1h.length >= 15) {
-      const rsiRes1h = calculateRSI(candles1h, 14, { symbol, timeframe: '1H' });
-      return rsiRes1h.current;
-    }
-  }
-
-  // 6. Smooth momentum approximation from 24h ticker for broad market coverage while klines load
+  // 5. Smooth timeframe-adapted momentum approximation from 24h ticker for broad market coverage while klines load
   if (tickerData) {
     const { lastPrice, highPrice, lowPrice, priceChangePercent } = tickerData;
     const range = highPrice - lowPrice;
     const pos = range > 0 ? (lastPrice - lowPrice) / range : 0.5;
-    const posComponent = (pos - 0.5) * 36;
-    const changeComponent = Math.max(-25, Math.min(25, priceChangePercent * 1.2));
+
+    let posWeight = 36;
+    let chgWeight = 1.2;
+    const lowerTf = tf.toLowerCase();
+    if (lowerTf === '15m') {
+      posWeight = 48;
+      chgWeight = 1.6;
+    } else if (lowerTf === '30m') {
+      posWeight = 42;
+      chgWeight = 1.4;
+    } else if (lowerTf === '4h') {
+      posWeight = 30;
+      chgWeight = 1.0;
+    } else if (lowerTf === '1d') {
+      posWeight = 24;
+      chgWeight = 0.8;
+    }
+
+    const posComponent = (pos - 0.5) * posWeight;
+    const changeComponent = Math.max(-28, Math.min(28, priceChangePercent * chgWeight));
     const est = Math.max(12, Math.min(92, 50 + posComponent + changeComponent));
     return parseFloat(est.toFixed(1));
   }
@@ -952,28 +961,38 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
   const forceFresh = req.query.fresh === '1' || req.query.fresh === 'true';
   const cachedForTf = cachedOverviewMap[tf];
 
-  if (cachedForTf && (now - cachedForTf.time < 15000 || (!forceFresh && now - cachedForTf.time < 60000))) {
+  // Strictly return cache ONLY for the matching timeframe, and never when forceFresh is requested
+  if (!forceFresh && cachedForTf && (now - cachedForTf.time < 30000)) {
     res.json({ success: true, ...cachedForTf.data, timeframe: tf, cached: true, exchange: 'BINANCE', marketType: 'SPOT' });
-    return;
-  }
-  if (!cachedForTf && cachedOverview && (now - lastOverviewCacheTime < 30000)) {
-    res.json({ success: true, ...cachedOverview, timeframe: tf, cached: true, exchange: 'BINANCE', marketType: 'SPOT' });
     return;
   }
 
   try {
     await binanceDiscoveryService.refreshEligibleSymbols();
+
+    // Pre-warm candles for core tracked symbols on requested timeframe
+    const missingTracked = DASHBOARD_TRACKED_SYMBOLS.filter(sym => {
+      const c = candleStore.getCandles(sym, tf.toLowerCase());
+      return !c || c.length < 15;
+    });
+    if (missingTracked.length > 0) {
+      await Promise.allSettled(
+        missingTracked.slice(0, 16).map(s => fetchAndStoreKlines(s, tf.toLowerCase(), 150))
+      );
+    }
+
     const resp = await binanceGet<any[]>('/api/v3/ticker/24hr', { timeout: 9000 });
     const usdtMap: Record<string, { price: number; change24h: number }> = {};
     const usdtList: Array<{ symbol: string; change24h: number; price: number }> = [];
 
-    // Filter ONLY real tradeable Binance spot pairs (excluding stablecoins)
+    // Filter ONLY real tradeable Binance spot pairs (excluding stablecoins and fake/delisted tokens)
     const rawTickers = Array.isArray(resp?.data) ? resp.data : [];
     const realPairs = rawTickers.filter((t: any) =>
       t &&
       t.symbol &&
       binanceDiscoveryService.isEligible(t.symbol) &&
       !EXCLUDED_STABLECOINS.has(t.symbol.replace('USDT', '')) &&
+      !FAKE_OR_DELISTED_SYMBOLS.has(t.symbol.replace('USDT', '')) &&
       parseFloat(t.quoteVolume || '0') > 500 &&
       parseFloat(t.lastPrice || '0') > 0
     );
@@ -1002,7 +1021,7 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
 
     for (const t of realPairs) {
       const cleanSym = t.symbol.replace('USDT', '');
-      if (EXCLUDED_STABLECOINS.has(cleanSym)) continue;
+      if (EXCLUDED_STABLECOINS.has(cleanSym) || FAKE_OR_DELISTED_SYMBOLS.has(cleanSym)) continue;
 
       const price = parseFloat(t.lastPrice);
       const change24h = parseFloat(t.priceChangePercent);
@@ -1099,10 +1118,6 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
     const cachedForTf = cachedOverviewMap[tf];
     if (cachedForTf) {
       res.json({ success: true, ...cachedForTf.data, timeframe: tf, cached: true, exchange: 'BINANCE', marketType: 'SPOT' });
-      return;
-    }
-    if (cachedOverview) {
-      res.json({ success: true, ...cachedOverview, timeframe: tf, cached: true, exchange: 'BINANCE', marketType: 'SPOT' });
       return;
     }
 

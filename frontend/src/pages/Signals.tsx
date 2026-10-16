@@ -58,7 +58,12 @@ export const Signals: React.FC<{ navigate: (page: string) => void }> = ({ naviga
     }
   };
 
+  const FAKE_OR_STABLE = new Set(['SNXXB', 'MUB', 'MUUB', 'AXTIB', 'HYPE', 'USD1', 'USDC', 'FDUSD', 'TUSD', 'EUR']);
+
   const filtered = signals.filter(s => {
+    if (!s || !s.symbol || !s.symbol.endsWith('USDT')) return false;
+    const clean = s.symbol.replace('USDT', '');
+    if (FAKE_OR_STABLE.has(clean)) return false;
     if (filter === 'VALID') return s.signalValid;
     if (filter === 'REJECTED') return !s.signalValid;
     return true;

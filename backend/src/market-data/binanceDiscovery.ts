@@ -29,6 +29,11 @@ export const EXCLUDED_STABLECOINS = new Set([
   'USDC', 'FDUSD', 'TUSD', 'USD1', 'EUR', 'BUSD', 'DAI', 'USDP', 'AEUR', 'EURI', 'USDE', 'USDD'
 ]);
 
+// Synthetic delisted stock tokens and fake test symbols to exclude from all scanners
+export const FAKE_OR_DELISTED_SYMBOLS = new Set([
+  'SNXXB', 'MUB', 'MUUB', 'AXTIB', 'TQQQB', 'AAPLB', 'TSLAB', 'COINB', 'NVDAB', 'MSFTB', 'HYPE', 'AMZNB', 'GOOGLB'
+]);
+
 class BinanceDiscoveryService {
   private eligibleSymbols = new Map<string, BinanceSymbolInfo>();
   private eligibleSymbolSet = new Set<string>();
@@ -57,7 +62,8 @@ class BinanceDiscoveryService {
         s.quoteAsset === this.targetQuoteAsset &&
         s.status === 'TRADING' &&
         s.isSpotTradingAllowed &&
-        !EXCLUDED_STABLECOINS.has(s.baseAsset)
+        !EXCLUDED_STABLECOINS.has(s.baseAsset) &&
+        !FAKE_OR_DELISTED_SYMBOLS.has(s.baseAsset)
       ) {
         const info: BinanceSymbolInfo = {
           symbol: s.symbol,
@@ -159,8 +165,8 @@ class BinanceDiscoveryService {
         }
 
         // Filter 5: Stablecoin and fiat pegged pairs excluded from scanner
-        if (EXCLUDED_STABLECOINS.has(base)) {
-          diagnostics.push({ symbol, reason: 'Stablecoin excluded from trading scan', timestamp: now });
+        if (EXCLUDED_STABLECOINS.has(base) || FAKE_OR_DELISTED_SYMBOLS.has(base)) {
+          diagnostics.push({ symbol, reason: 'Stablecoin or delisted stock excluded from trading scan', timestamp: now });
           continue;
         }
 
@@ -225,6 +231,10 @@ class BinanceDiscoveryService {
     const formatted = symbol.toUpperCase().endsWith(this.targetQuoteAsset)
       ? symbol.toUpperCase()
       : `${symbol.toUpperCase()}${this.targetQuoteAsset}`;
+    const base = formatted.replace(this.targetQuoteAsset, '');
+    if (FAKE_OR_DELISTED_SYMBOLS.has(base) || EXCLUDED_STABLECOINS.has(base)) {
+      return false;
+    }
     return this.eligibleSymbolSet.has(formatted);
   }
 

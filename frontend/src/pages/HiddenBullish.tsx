@@ -72,191 +72,21 @@ const FAKE_SYMBOLS = new Set([
 ]);
 
 const DEFAULT_HIDDEN_SIGNALS: HiddenCandidateSignal[] = [];
-const _UNUSED_DEFAULT_SIGNALS: HiddenCandidateSignal[] = [
-  {
-    symbol: 'SCRTUSDT',
-    cleanSymbol: 'SCRT',
-    price: 0.0071,
-    change24h: -22.8,
-    rsi15M: 38.2,
-    rsi30M: 38.9,
-    rsi1H: 39.15,
-    closedCandleRsi: 37.72,
-    prevRsi1H: 37.72,
-    rsi1D: 34.5,
-    isConsolidating: true,
-    is30MLeading: true,
-    isHBConfirmed: true,
-    timeAgo: 'Now',
-    detectedAt: Date.now() - 15000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:SCRTUSDT&interval=60',
-    confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40 (39.15), 1H Consolidation, 30M Lead',
-    divergenceDetected: true,
-    measuredCandles: 18,
-    priceLow1: 0.0074,
-    priceLow2: 0.0071,
-    rsiLow1: 36.80,
-    rsiLow2: 39.15,
-    barsApart: 17,
-    divergenceStatus: 'Waiting for next live green 1H candle'
-  },
-  {
-    symbol: 'SOPHUSDT',
-    cleanSymbol: 'SOPH',
-    price: 0.00251,
-    change24h: -18.5,
-    rsi15M: 35.1,
-    rsi30M: 35.6,
-    rsi1H: 34.73,
-    closedCandleRsi: 35.74,
-    prevRsi1H: 35.74,
-    rsi1D: 33.8,
-    isConsolidating: true,
-    is30MLeading: true,
-    isHBConfirmed: true,
-    timeAgo: 'Now',
-    detectedAt: Date.now() - 35000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:SOPHUSDT&interval=60',
-    confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40 (34.73), 1H Consolidation, 30M Lead',
-    divergenceDetected: true,
-    measuredCandles: 22,
-    priceLow1: 0.00262,
-    priceLow2: 0.00251,
-    rsiLow1: 33.10,
-    rsiLow2: 34.73,
-    barsApart: 21,
-    divergenceStatus: 'Waiting for next live green 1H candle'
-  },
-  {
-    symbol: 'DATAUSDT',
-    cleanSymbol: 'DATA',
-    price: 0.00088,
-    change24h: -31.2,
-    rsi15M: 32.4,
-    rsi30M: 33.1,
-    rsi1H: 30.96,
-    closedCandleRsi: 33.86,
-    prevRsi1H: 33.86,
-    rsi1D: 29.4,
-    isConsolidating: true,
-    is30MLeading: true,
-    isHBConfirmed: true,
-    timeAgo: 'Now',
-    detectedAt: Date.now() - 55000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:DATAUSDT&interval=60',
-    confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40 (30.96), 1H Consolidation, 30M Lead',
-    divergenceDetected: true,
-    measuredCandles: 14,
-    priceLow1: 0.00095,
-    priceLow2: 0.00088,
-    rsiLow1: 29.50,
-    rsiLow2: 30.96,
-    barsApart: 13,
-    divergenceStatus: 'Waiting for next live green 1H candle'
-  },
-  {
-    symbol: 'MBOXUSDT',
-    cleanSymbol: 'MBOX',
-    price: 0.0021,
-    change24h: -16.0,
-    rsi15M: 31.8,
-    rsi30M: 32.4,
-    rsi1H: 30.22,
-    closedCandleRsi: 32.16,
-    prevRsi1H: 32.16,
-    rsi1D: 31.0,
-    isConsolidating: true,
-    is30MLeading: true,
-    isHBConfirmed: true,
-    timeAgo: 'Now',
-    detectedAt: Date.now() - 80000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:MBOXUSDT&interval=60',
-    confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40 (30.22), 1H Consolidation, 30M Lead',
-    divergenceDetected: true,
-    measuredCandles: 16,
-    priceLow1: 0.00224,
-    priceLow2: 0.0021,
-    rsiLow1: 28.90,
-    rsiLow2: 30.22,
-    barsApart: 15,
-    divergenceStatus: 'Waiting for next live green 1H candle'
-  },
-  {
-    symbol: 'PONDUSDT',
-    cleanSymbol: 'POND',
-    price: 0.00081,
-    change24h: -18.2,
-    rsi15M: 31.5,
-    rsi30M: 31.9,
-    rsi1H: 30.79,
-    closedCandleRsi: 30.79,
-    prevRsi1H: 30.79,
-    rsi1D: 32.1,
-    isConsolidating: true,
-    is30MLeading: true,
-    isHBConfirmed: true,
-    timeAgo: 'Now',
-    detectedAt: Date.now() - 110000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:PONDUSDT&interval=60',
-    confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40 (30.79), 1H Consolidation, 30M Lead',
-    divergenceDetected: true,
-    measuredCandles: 20,
-    priceLow1: 0.00086,
-    priceLow2: 0.00081,
-    rsiLow1: 29.80,
-    rsiLow2: 30.79,
-    barsApart: 19,
-    divergenceStatus: 'Waiting for next live green 1H candle'
-  },
-  {
-    symbol: 'DFUSDT',
-    cleanSymbol: 'DF',
-    price: 0.00164,
-    change24h: -17.6,
-    rsi15M: 32.8,
-    rsi30M: 33.2,
-    rsi1H: 31.05,
-    closedCandleRsi: 34.47,
-    prevRsi1H: 34.47,
-    rsi1D: 30.5,
-    isConsolidating: true,
-    is30MLeading: true,
-    isHBConfirmed: true,
-    timeAgo: 'Now',
-    detectedAt: Date.now() - 130000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:DFUSDT&interval=60',
-    confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1H RSI in 30-40 (31.05), 1H Consolidation, 30M Lead',
-    divergenceDetected: true,
-    measuredCandles: 12,
-    priceLow1: 0.00175,
-    priceLow2: 0.00164,
-    rsiLow1: 30.10,
-    rsiLow2: 31.05,
-    barsApart: 11,
-    divergenceStatus: 'Waiting for next live green 1H candle'
-  }
-];
 
-const getInitialHiddenSignals = () => {
+const getInitialHiddenSignals = (): HiddenCandidateSignal[] => {
   try {
     const raw = localStorage.getItem('cached_hidden_signals');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Discard any old stale fake seeds (e.g. ADA at 0.724 or XRP at 2.45)
+        const now = Date.now();
+        // Discard any stale seeds older than 90 mins or fake symbols
         const filtered = parsed.filter((s: any) =>
           s &&
           s.symbol &&
           !FAKE_SYMBOLS.has(s.symbol) &&
           s.symbol.endsWith('USDT') &&
-          !(s.symbol === 'ADAUSDT' && s.price > 0.5) &&
-          !(s.symbol === 'XRPUSDT' && s.price === 2.45)
+          now - (s.detectedAt || 0) < 90 * 60 * 1000
         );
         if (filtered.length > 0) return filtered;
       }
@@ -359,27 +189,16 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
         setProgressWidth('100%');
 
         setSignals(prevSignals => {
-          if (confirmedSigs.length === 0) {
-            return prevSignals;
-          }
           const prevMap = new Map(prevSignals.map(s => [s.symbol, s]));
-          const freshAlerts = confirmedSigs.filter(s => !prevMap.has(s.symbol) || s.timeAgo === 'just now');
+          const freshAlerts = confirmedSigs.filter(s => !prevMap.has(s.symbol));
 
           if (freshAlerts.length > 0) {
-            // Stream incoming signals one by one smoothly with audio chime
-            freshAlerts.forEach((sig, idx) => {
-              setTimeout(() => {
-                if (soundRef.current) playChime();
-                setSignals(cur => {
-                  const exists = cur.some(c => c.symbol === sig.symbol);
-                  if (exists) return cur.map(c => c.symbol === sig.symbol ? { ...c, ...sig } : c);
-                  return [sig, ...cur];
-                });
-                setLogs(l => [
-                  { time: getLocalTimeStr(), msg: `🚨 Live Signal: ${sig.symbol} confirmed - 1H Consolidation + 30M Lead (RSI 1H: ${sig.rsi1H})` },
-                  ...l.slice(0, 35)
-                ]);
-              }, idx * 600);
+            if (soundRef.current) playChime();
+            freshAlerts.forEach(sig => {
+              setLogs(l => [
+                { time: getLocalTimeStr(), msg: `🚨 Live Signal: ${sig.symbol} confirmed in RSI 30-40 (RSI 1H: ${sig.rsi1H})` },
+                ...l.slice(0, 35)
+              ]);
             });
           } else {
             setLogs(prev => [
@@ -391,15 +210,19 @@ export const HiddenBullish: React.FC<{ navigate: (page: string) => void }> = () 
             ]);
           }
 
-          // Merge: update existing, append new
-          for (const s of confirmedSigs) {
-            prevMap.set(s.symbol, s);
-          }
-          const mergedList = Array.from(prevMap.values()).sort((a, b) => (b.detectedAt || 0) - (a.detectedAt || 0));
+          // Build clean, live signal list strictly from active confirmed signals
+          const updatedSignals = confirmedSigs.map(s => {
+            const prev = prevMap.get(s.symbol);
+            if (prev) {
+              return { ...s, detectedAt: prev.detectedAt, timeAgo: s.timeAgo || prev.timeAgo };
+            }
+            return s;
+          }).sort((a, b) => (b.detectedAt || 0) - (a.detectedAt || 0));
+
           try {
-            localStorage.setItem('cached_hidden_signals', JSON.stringify(mergedList));
+            localStorage.setItem('cached_hidden_signals', JSON.stringify(updatedSignals));
           } catch (err) {}
-          return mergedList;
+          return updatedSignals;
         });
 
         if (activeList.length > 0) {

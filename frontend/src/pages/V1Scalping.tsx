@@ -68,151 +68,26 @@ const getLocalTimeStr = (opts?: Intl.DateTimeFormatOptions) => {
 };
 
 const DEFAULT_V1_SIGNALS: V1CandidateSignal[] = [];
-const _UNUSED_DEFAULT_V1_SIGNALS: V1CandidateSignal[] = [
-  {
-    symbol: 'SOLUSDT',
-    cleanSymbol: 'SOL',
-    price: 188.45,
-    change24h: 4.82,
-    rsi15M: 59.2,
-    rsi30M: 58.4,
-    rsi1H: 54.20,
-    rsi1D: 62.4,
-    trend1H: 'Uptrend',
-    trend1D: 'Uptrend',
-    isLeadershipConfirmed: true,
-    is15MAbove30M: true,
-    isLadderAligned: true,
-    isFullLadder: true,
-    isV1Confirmed: true,
-    timeAgo: 'Now',
-    detectedAt: Date.now() - 15000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:SOLUSDT&interval=60',
-    confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1D+1H Uptrend, 1H RSI in 50-60, 30M RSI Leading, V1 GREEN',
-    v1Color: 'GREEN',
-    divergenceStatus: 'Waiting for next live green 1H candle',
-    measuredCandles: 24,
-    barsApart: 23
-  },
-  {
-    symbol: 'ETHUSDT',
-    cleanSymbol: 'ETH',
-    price: 2984.50,
-    change24h: 2.15,
-    rsi15M: 56.4,
-    rsi30M: 55.8,
-    rsi1H: 52.30,
-    rsi1D: 58.9,
-    trend1H: 'Uptrend',
-    trend1D: 'Uptrend',
-    isLeadershipConfirmed: true,
-    is15MAbove30M: true,
-    isLadderAligned: true,
-    isFullLadder: true,
-    isV1Confirmed: true,
-    timeAgo: 'Now',
-    detectedAt: Date.now() - 35000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:ETHUSDT&interval=60',
-    confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1D+1H Uptrend, 1H RSI in 50-60, 30M RSI Leading, V1 GREEN',
-    v1Color: 'GREEN',
-    divergenceStatus: 'Waiting for next live green 1H candle',
-    measuredCandles: 18,
-    barsApart: 17
-  },
-  {
-    symbol: 'NEARUSDT',
-    cleanSymbol: 'NEAR',
-    price: 5.48,
-    change24h: 6.30,
-    rsi15M: 61.2,
-    rsi30M: 59.5,
-    rsi1H: 56.80,
-    rsi1D: 64.1,
-    trend1H: 'Uptrend',
-    trend1D: 'Uptrend',
-    isLeadershipConfirmed: true,
-    is15MAbove30M: true,
-    isLadderAligned: true,
-    isFullLadder: true,
-    isV1Confirmed: true,
-    timeAgo: 'Now',
-    detectedAt: Date.now() - 55000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:NEARUSDT&interval=60',
-    confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1D+1H Uptrend, 1H RSI in 50-60, 30M RSI Leading, V1 GREEN',
-    v1Color: 'GREEN',
-    divergenceStatus: 'Waiting for next live green 1H candle',
-    measuredCandles: 14,
-    barsApart: 13
-  },
-  {
-    symbol: 'AVAXUSDT',
-    cleanSymbol: 'AVAX',
-    price: 34.62,
-    change24h: 3.12,
-    rsi15M: 57.8,
-    rsi30M: 56.2,
-    rsi1H: 53.40,
-    rsi1D: 60.5,
-    trend1H: 'Uptrend',
-    trend1D: 'Uptrend',
-    isLeadershipConfirmed: true,
-    is15MAbove30M: true,
-    isLadderAligned: true,
-    isFullLadder: true,
-    isV1Confirmed: true,
-    timeAgo: 'Now',
-    detectedAt: Date.now() - 75000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:AVAXUSDT&interval=60',
-    confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1D+1H Uptrend, 1H RSI in 50-60, 30M RSI Leading, V1 GREEN',
-    v1Color: 'GREEN',
-    divergenceStatus: 'Waiting for next live green 1H candle',
-    measuredCandles: 12,
-    barsApart: 11
-  },
-  {
-    symbol: 'BTCUSDT',
-    cleanSymbol: 'BTC',
-    price: 68420.00,
-    change24h: 1.85,
-    rsi15M: 58.1,
-    rsi30M: 57.4,
-    rsi1H: 55.10,
-    rsi1D: 61.8,
-    trend1H: 'Uptrend',
-    trend1D: 'Uptrend',
-    isLeadershipConfirmed: true,
-    is15MAbove30M: true,
-    isLadderAligned: true,
-    isFullLadder: true,
-    isV1Confirmed: true,
-    timeAgo: 'Now',
-    detectedAt: Date.now() - 95000,
-    tradingViewUrl: 'https://www.tradingview.com/chart/?symbol=BINANCE:BTCUSDT&interval=60',
-    confirmationStatus: 'CONFIRMED',
-    qualificationReason: '1D+1H Uptrend, 1H RSI in 50-60, 30M RSI Leading, V1 GREEN',
-    v1Color: 'GREEN',
-    divergenceStatus: 'Waiting for next live green 1H candle',
-    measuredCandles: 30,
-    barsApart: 29
-  }
-];
 
 const FAKE_SYMBOLS = new Set([
   'SNXXBUSDT', 'MUBUSDT', 'MUUBUSDT', 'AXTIBUSDT', 'HYPEUSDT',
   'USD1USDT', 'USDCUSDT', 'FDUSDUSDT', 'TUSDUSDT', 'EURUSDT', 'DAIUSDT', 'USDPUSDT', 'AEURUSDT', 'EURIUSDT', 'USDEUSDT', 'USDDUSDT', 'BUSDUSDT'
 ]);
 
-const getInitialV1Signals = () => {
+const getInitialV1Signals = (): V1CandidateSignal[] => {
   try {
     const raw = localStorage.getItem('cached_v1_signals');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const filtered = parsed.filter((s: any) => s && s.symbol && !FAKE_SYMBOLS.has(s.symbol) && s.symbol.endsWith('USDT'));
+        const now = Date.now();
+        const filtered = parsed.filter((s: any) =>
+          s &&
+          s.symbol &&
+          !FAKE_SYMBOLS.has(s.symbol) &&
+          s.symbol.endsWith('USDT') &&
+          now - (s.detectedAt || 0) < 90 * 60 * 1000
+        );
         if (filtered.length > 0) return filtered;
       }
     }
@@ -298,47 +173,42 @@ export const V1Scalping: React.FC<{ navigate: (page: string) => void }> = () => 
     try {
       const data = await api.getV1Scanner({ rsiMin, rsiMax, fresh: true });
       if (data && data.success) {
-        const newSignals = data.signals || [];
+        const rawSignals = (data.signals || []).filter(
+          (s: any) => s && s.symbol && !FAKE_SYMBOLS.has(s.symbol) && s.symbol.endsWith('USDT')
+        );
 
         setSignals(prevSignals => {
-          if (newSignals.length === 0) {
-            return prevSignals;
-          }
           const prevMap = new Map(prevSignals.map(s => [s.symbol, s]));
-          const freshAlerts = newSignals.filter(s => !prevMap.has(s.symbol) || s.timeAgo === 'just now');
+          const freshAlerts = rawSignals.filter(s => !prevMap.has(s.symbol));
 
           if (freshAlerts.length > 0) {
-            // Stream incoming signals one by one smoothly with audio chime
-            freshAlerts.forEach((sig, idx) => {
-              setTimeout(() => {
-                if (soundRef.current) playChime();
-                setSignals(cur => {
-                  const exists = cur.some(c => c.symbol === sig.symbol);
-                  if (exists) return cur.map(c => c.symbol === sig.symbol ? { ...c, ...sig } : c);
-                  return [sig, ...cur];
-                });
-                setLogs(l => [
-                  { time: getLocalTimeStr(), msg: `⚡ Live Signal: ${sig.symbol} confirmed in V1 Zone (RSI 1H: ${sig.rsi1H})` },
-                  ...l.slice(0, 35)
-                ]);
-              }, idx * 600);
+            if (soundRef.current) playChime();
+            freshAlerts.forEach(sig => {
+              setLogs(l => [
+                { time: getLocalTimeStr(), msg: `⚡ Live Signal: ${sig.symbol} confirmed in V1 Zone (RSI 1H: ${sig.rsi1H})` },
+                ...l.slice(0, 35)
+              ]);
             });
           } else {
             setLogs(prev => [
-              { time: timeStr, msg: `V1 scan complete - ${newSignals.length} active setups verified on Binance` },
+              { time: timeStr, msg: `V1 scan complete - ${rawSignals.length} active setups verified on Binance` },
               ...prev.slice(0, 35)
             ]);
           }
 
-          // Merge: update existing, append new
-          for (const s of newSignals) {
-            prevMap.set(s.symbol, s);
-          }
-          const mergedList = Array.from(prevMap.values()).sort((a, b) => (b.detectedAt || 0) - (a.detectedAt || 0));
+          // Build clean, live signal list strictly from active confirmed signals
+          const updatedSignals = rawSignals.map(s => {
+            const prev = prevMap.get(s.symbol);
+            if (prev) {
+              return { ...s, detectedAt: prev.detectedAt, timeAgo: s.timeAgo || prev.timeAgo };
+            }
+            return s;
+          }).sort((a, b) => (b.detectedAt || 0) - (a.detectedAt || 0));
+
           try {
-            localStorage.setItem('cached_v1_signals', JSON.stringify(mergedList));
+            localStorage.setItem('cached_v1_signals', JSON.stringify(updatedSignals));
           } catch (err) {}
-          return mergedList;
+          return updatedSignals;
         });
 
         if (data.activeCoins && data.activeCoins.length > 0) {
