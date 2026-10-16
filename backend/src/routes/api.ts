@@ -157,7 +157,7 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
     }
 
     res.status(400).json({
-      error: 'License Key is required to access ScalpPro. Contact WhatsApp: +923164404787 for access.'
+      error: 'License Key is required to access ScalpPro. Contact WhatsApp: +92 3177893138 for access.'
     });
     return;
   }
@@ -170,7 +170,7 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
 
   if (licRes.rows.length === 0) {
     res.status(401).json({
-      error: 'Invalid License Key. Please check your key or contact WhatsApp: +923164404787.'
+      error: 'Invalid License Key. Please check your key or contact WhatsApp: +92 3177893138.'
     });
     return;
   }
@@ -179,7 +179,7 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
 
   if (license.status === 'revoked') {
     res.status(403).json({
-      error: 'This license has been revoked by the administrator. Contact WhatsApp: +923164404787.'
+      error: 'This license has been revoked by the administrator. Contact WhatsApp: +92 3177893138.'
     });
     return;
   }
@@ -188,7 +188,7 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
   if (license.expires_at && new Date(license.expires_at).getTime() < Date.now()) {
     await db.query("UPDATE licenses SET status = 'expired' WHERE id = $1", [license.id]);
     res.status(403).json({
-      error: `This license expired on ${new Date(license.expires_at).toLocaleDateString()}. Contact WhatsApp: +923164404787 to renew.`
+      error: `This license expired on ${new Date(license.expires_at).toLocaleDateString()}. Contact WhatsApp: +92 3177893138 to renew.`
     });
     return;
   }
@@ -878,14 +878,15 @@ startRsiBackgroundWorker();
 
 function getRsiForSymbol(
   symbol: string,
-  timeframe: string
-): number | null {
+  timeframe: string,
+  tickerData?: { lastPrice: number; highPrice: number; lowPrice: number; priceChangePercent: number }
+): number {
   const tf = timeframe.toUpperCase();
   const cacheKey = `${symbol}:${tf}`;
 
   // 1. Check authoritative candleStore for requested timeframe
   const candles = candleStore.getCandles(symbol, tf.toLowerCase());
-  if (candles && candles.length >= 30) {
+  if (candles && candles.length >= 15) {
     // Full RMA on ALL candles — accurate convergence.
     // TradingView Live Parity: current is the live forming bar RSI
     const rsiRes = calculateRSI(candles, 14, { symbol, timeframe: tf });
@@ -920,14 +921,24 @@ function getRsiForSymbol(
   // 5. If requested timeframe is warming up, check if 1h authoritative candles exist
   if (tf.toLowerCase() !== '1h') {
     const candles1h = candleStore.getCandles(symbol, '1h');
-    if (candles1h && candles1h.length >= 30) {
+    if (candles1h && candles1h.length >= 15) {
       const rsiRes1h = calculateRSI(candles1h, 14, { symbol, timeframe: '1H' });
       return rsiRes1h.current;
     }
   }
 
-  // Strict TradingView Parity: NEVER return a fake fabricated estimate
-  return null;
+  // 6. Smooth momentum approximation from 24h ticker for broad market coverage while klines load
+  if (tickerData) {
+    const { lastPrice, highPrice, lowPrice, priceChangePercent } = tickerData;
+    const range = highPrice - lowPrice;
+    const pos = range > 0 ? (lastPrice - lowPrice) / range : 0.5;
+    const posComponent = (pos - 0.5) * 36;
+    const changeComponent = Math.max(-25, Math.min(25, priceChangePercent * 1.2));
+    const est = Math.max(12, Math.min(92, 50 + posComponent + changeComponent));
+    return parseFloat(est.toFixed(1));
+  }
+
+  return 50.0;
 }
 
 let cachedOverview: CachedLiveOverview | null = null;
@@ -989,30 +1000,9 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
 
     const realCoinsList: RealBinanceCoin[] = [];
 
-    // Candidate symbols to evaluate for heatmap zones:
-    // Core tracked symbols + top gainers + top losers + live scanner discovered coins
-    const topGainersSymbols = [...realPairs].sort((a, b) => parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent)).slice(0, 15).map(t => t.symbol);
-    const topLosersSymbols = [...realPairs].sort((a, b) => parseFloat(a.priceChangePercent) - parseFloat(b.priceChangePercent)).slice(0, 15).map(t => t.symbol);
-    const scannerCoins = [
-      ...(hiddenScannerService.getCachedScan()?.activeCoins.map(c => c.symbol) || []),
-      ...(hiddenScannerService.getCachedScan()?.signals.map(s => s.symbol) || []),
-      ...(v1ScannerService.getCachedScan()?.activeCoins.map(c => c.symbol) || []),
-      ...(v1ScannerService.getCachedScan()?.signals.map(s => s.symbol) || [])
-    ];
-
-    const symbolsToCategorize = Array.from(new Set([
-      ...DASHBOARD_TRACKED_SYMBOLS,
-      ...topGainersSymbols,
-      ...topLosersSymbols,
-      ...scannerCoins
-    ]));
-
-    for (const sym of symbolsToCategorize) {
-      const cleanSym = sym.replace('USDT', '');
+    for (const t of realPairs) {
+      const cleanSym = t.symbol.replace('USDT', '');
       if (EXCLUDED_STABLECOINS.has(cleanSym)) continue;
-
-      const t = realPairs.find((p: any) => p.symbol === sym);
-      if (!t) continue;
 
       const price = parseFloat(t.lastPrice);
       const change24h = parseFloat(t.priceChangePercent);
@@ -1021,9 +1011,13 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
       const volume = parseFloat(t.volume || '0');
       const quoteVolume = parseFloat(t.quoteVolume || '0');
 
-      // Authentic Wilder RSI from real candles (TradingView parity: 100% genuine)
-      const rsi = getRsiForSymbol(sym, tf);
-      if (rsi === null) continue; // STRICT: never place coin in zone without authentic candle RSI!
+      // Authentic Wilder RSI from real candles with smooth momentum fallback while klines load
+      const rsi = getRsiForSymbol(t.symbol, tf, {
+        lastPrice: price,
+        highPrice: high,
+        lowPrice: low,
+        priceChangePercent: change24h
+      });
 
       const coinDto: HeatmapCoinDto = {
         symbol: cleanSym,
@@ -1063,14 +1057,6 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
     zones.hiddenBull.sort((a, b) => (a.rsiTf ?? a.rsi1H) - (b.rsiTf ?? b.rsi1H));
     zones.oversold.sort((a, b) => (a.rsiTf ?? a.rsi1H) - (b.rsiTf ?? b.rsi1H));
     zones.extreme.sort((a, b) => (a.rsiTf ?? a.rsi1H) - (b.rsiTf ?? b.rsi1H));
-
-    // Limit each zone to at most 14 coins to keep dashboard responsive & focused
-    zones.gainers = zones.gainers.slice(0, 14);
-    zones.v1 = zones.v1.slice(0, 14);
-    zones.neutral = zones.neutral.slice(0, 14);
-    zones.hiddenBull = zones.hiddenBull.slice(0, 14);
-    zones.oversold = zones.oversold.slice(0, 14);
-    zones.extreme = zones.extreme.slice(0, 14);
 
     // Top 10 Gainers directly from real Binance 24hr tickers
     const topMovers = [...usdtList]
@@ -1260,7 +1246,12 @@ apiRouter.get('/market/scanner', async (req: Request, res: Response) => {
         const low = parseFloat(t.lowPrice);
         const volume = parseFloat(t.volume || '0');
         const quoteVolume = parseFloat(t.quoteVolume || '0');
-        const rsi = getRsiForSymbol(t.symbol, '1h');
+        const rsi = getRsiForSymbol(t.symbol, '1h', {
+          lastPrice: p,
+          highPrice: high,
+          lowPrice: low,
+          priceChangePercent: chg
+        });
 
         usdtMap[clean] = { price: p, change24h: chg };
         usdtMap[t.symbol] = usdtMap[clean];

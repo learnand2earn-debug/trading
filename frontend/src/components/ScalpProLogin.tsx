@@ -215,7 +215,7 @@ export const ScalpProLogin: React.FC<ScalpProLoginProps> = ({
             color: '#34d399', display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}><ChevronLeft size={15} /></button>
 
-          <a href="https://wa.me/923164404787" target="_blank" rel="noopener noreferrer" style={{
+          <a href="https://wa.me/923177893138" target="_blank" rel="noopener noreferrer" style={{
             display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none',
             color: '#f0fdf4', fontWeight: 600, fontSize: '13px', textAlign: 'center'
           }}>
@@ -254,7 +254,7 @@ export const ScalpProLogin: React.FC<ScalpProLoginProps> = ({
           <div style={{ fontSize: '12px', color: '#a7f3d0', fontWeight: 500, marginBottom: '16px', lineHeight: 1.6 }}>
             Login or Technical Support
           </div>
-          <a href="https://wa.me/923164404787" target="_blank" rel="noopener noreferrer" style={{
+          <a href="https://wa.me/923177893138" target="_blank" rel="noopener noreferrer" style={{
             display: 'inline-flex', alignItems: 'center', gap: '9px', textDecoration: 'none',
             color: '#34d399', fontWeight: 800, fontSize: '14px'
           }}>
@@ -265,7 +265,7 @@ export const ScalpProLogin: React.FC<ScalpProLoginProps> = ({
             }}>
               <Phone size={14} color="#34d399" />
             </div>
-            +923164404787
+            +92 3177893138
           </a>
 
           {/* Scanner statuses */}
@@ -414,7 +414,7 @@ export const ScalpProLogin: React.FC<ScalpProLoginProps> = ({
           <div style={{ fontSize: '12px', color: '#a7f3d0', fontWeight: 500, marginBottom: '16px', lineHeight: 1.6 }}>
             License & Subscription
           </div>
-          <a href="https://wa.me/923164404787" target="_blank" rel="noopener noreferrer" style={{
+          <a href="https://wa.me/923177893138" target="_blank" rel="noopener noreferrer" style={{
             display: 'inline-flex', alignItems: 'center', gap: '9px', textDecoration: 'none',
             color: '#34d399', fontWeight: 800, fontSize: '14px'
           }}>
@@ -425,7 +425,7 @@ export const ScalpProLogin: React.FC<ScalpProLoginProps> = ({
             }}>
               <Phone size={14} color="#34d399" />
             </div>
-            +923164404787
+            +92 3177893138
           </a>
 
           {/* Market Heatmap mini preview */}
