@@ -105,8 +105,11 @@ const DEFAULT_DASHBOARD_DATA = {
 
 const getInitialDashboardData = (tf?: string) => {
   try {
+    const isExplicit = Boolean(tf);
     const targetTf = (tf || localStorage.getItem('tv_timeframe') || '1H').toUpperCase();
-    const raw = localStorage.getItem(`cached_dashboard_data_${targetTf}`) || localStorage.getItem('cached_dashboard_data');
+    const raw = isExplicit
+      ? localStorage.getItem(`cached_dashboard_data_${targetTf}`)
+      : (localStorage.getItem(`cached_dashboard_data_${targetTf}`) || localStorage.getItem('cached_dashboard_data'));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
@@ -130,7 +133,7 @@ const getInitialDashboardData = (tf?: string) => {
       }
     }
   } catch (e) {}
-  return DEFAULT_DASHBOARD_DATA;
+  return tf ? null : DEFAULT_DASHBOARD_DATA;
 };
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -145,7 +148,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [initialFilter]);
 
-  const initialData = getInitialDashboardData();
+  const initialData = getInitialDashboardData() || DEFAULT_DASHBOARD_DATA;
   const [countdown, setCountdown] = useState<number>(30);
   const [updatedTime, setUpdatedTime] = useState<string>(() => initialData.updatedTime || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
 
@@ -194,9 +197,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       if (tfSnap.extreme && tfSnap.extreme.length > 0) setExtreme(tfSnap.extreme);
     }
 
+    setSaveStatus(`Loading ${formatted}...`);
     fetchAndUpdateLiveMarket(formatted, true);
-    setSaveStatus(`✓ Set to ${formatted}`);
-    setTimeout(() => setSaveStatus(''), 2500);
   };
 
   // Pull live market changes from Binance and update all dashboard components calmly every 30 seconds
@@ -234,17 +236,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
           let chgWeight = 1.2;
           const lowerTf = currentTf.toLowerCase();
           if (lowerTf === '15m') {
-            posWeight = 48;
-            chgWeight = 1.6;
+            posWeight = 58;
+            chgWeight = 2.4;
           } else if (lowerTf === '30m') {
-            posWeight = 42;
-            chgWeight = 1.4;
+            posWeight = 48;
+            chgWeight = 1.8;
           } else if (lowerTf === '4h') {
-            posWeight = 30;
-            chgWeight = 1.0;
+            posWeight = 28;
+            chgWeight = 0.9;
           } else if (lowerTf === '1d') {
-            posWeight = 24;
-            chgWeight = 0.8;
+            posWeight = 20;
+            chgWeight = 0.65;
           }
 
           for (const t of data) {
@@ -339,12 +341,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
       // 3. Update all 6 coin lists with actual real Binance coins and accurate RSI
       if (overview?.zones) {
         const z = overview.zones;
-        if (z.gainers && z.gainers.length > 0) setGainers(z.gainers);
-        if (z.v1 && z.v1.length > 0) setV1Coins(z.v1);
-        if (z.neutral && z.neutral.length > 0) setNeutral(z.neutral);
-        if (z.hiddenBull && z.hiddenBull.length > 0) setHiddenBull(z.hiddenBull);
-        if (z.oversold && z.oversold.length > 0) setOversold(z.oversold);
-        if (z.extreme && z.extreme.length > 0) setExtreme(z.extreme);
+        setGainers(z.gainers || []);
+        setV1Coins(z.v1 || []);
+        setNeutral(z.neutral || []);
+        setHiddenBull(z.hiddenBull || []);
+        setOversold(z.oversold || []);
+        setExtreme(z.extreme || []);
 
         const v1List = z.v1 || [];
         const cand = v1List.find(c => (c.rsiTf ?? c.rsi1H) >= 52.0 && (c.rsiTf ?? c.rsi1H) <= 55.0) || v1List[0];
@@ -355,12 +357,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
         // Cache persistent snapshot so reload NEVER causes delay or missing coins
         try {
           const snapshotPayload = JSON.stringify({
-            gainers: (z.gainers && z.gainers.length > 0) ? z.gainers : gainers,
-            v1Coins: (z.v1 && z.v1.length > 0) ? z.v1 : v1Coins,
-            neutral: (z.neutral && z.neutral.length > 0) ? z.neutral : neutral,
-            hiddenBull: (z.hiddenBull && z.hiddenBull.length > 0) ? z.hiddenBull : hiddenBull,
-            oversold: (z.oversold && z.oversold.length > 0) ? z.oversold : oversold,
-            extreme: (z.extreme && z.extreme.length > 0) ? z.extreme : extreme,
+            gainers: z.gainers || [],
+            v1Coins: z.v1 || [],
+            neutral: z.neutral || [],
+            hiddenBull: z.hiddenBull || [],
+            oversold: z.oversold || [],
+            extreme: z.extreme || [],
             topMovers: overview?.topMovers || topMovers,
             marketSentiment: currentSentiment,
             updatedTime: nowTime
@@ -368,6 +370,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
           localStorage.setItem(`cached_dashboard_data_${currentTf}`, snapshotPayload);
           localStorage.setItem('cached_dashboard_data', snapshotPayload);
         } catch (e) {}
+
+        setSaveStatus(`✓ Set to ${currentTf}`);
+        setTimeout(() => setSaveStatus(''), 2500);
       }
     } catch (e) {
       console.error('[Dashboard] Market update cycle error:', e);
@@ -503,26 +508,52 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   LIVE
                 </span>
 
-                <span
+                {/* Interactive Timeframe Toggle Buttons (15M, 30M, 1H, 4H, 1D) */}
+                <div
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
-                    padding: '2px 7px',
-                    background: '#161b22',
+                    background: '#0d1117',
                     border: '1px solid #30363d',
-                    color: '#58a6ff',
-                    borderRadius: '4px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    letterSpacing: '0.04em'
+                    borderRadius: '6px',
+                    padding: '2px',
+                    gap: '2px'
                   }}
-                  title="Current Active Timeframe for Heatmap RSI"
                 >
-                  {timeframe}
-                </span>
+                  {(['15M', '30M', '1H', '4H', '1D'] as const).map(tfOpt => {
+                    const isSelected = timeframe === tfOpt;
+                    return (
+                      <button
+                        key={tfOpt}
+                        type="button"
+                        onClick={() => handleTimeframeChange(tfOpt)}
+                        style={{
+                          padding: '3px 9px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          background: isSelected ? '#1f6feb' : 'transparent',
+                          color: isSelected ? '#ffffff' : '#8b949e',
+                          border: 'none',
+                          boxShadow: isSelected ? '0 0 8px rgba(31, 111, 235, 0.4)' : 'none',
+                          transition: 'all 0.15s ease'
+                        }}
+                        title={`Switch heatmap coins & RSI to ${tfOpt}`}
+                      >
+                        {tfOpt}
+                      </button>
+                    );
+                  })}
+                </div>
 
                 <span style={{ fontSize: '12px', color: '#8b949e', fontWeight: 500, marginLeft: '4px' }}>
                   Updated: <strong style={{ color: '#c9d1d9' }}>{updatedTime}</strong> · Next in: <strong style={{ color: '#39D353' }}>{countdown}s</strong>
+                  {saveStatus && (
+                    <span style={{ color: '#58a6ff', marginLeft: '8px', fontWeight: 700, fontSize: '11px' }}>
+                      {saveStatus}
+                    </span>
+                  )}
                 </span>
               </div>
 

@@ -928,22 +928,22 @@ function getRsiForSymbol(
     let chgWeight = 1.2;
     const lowerTf = tf.toLowerCase();
     if (lowerTf === '15m') {
-      posWeight = 48;
-      chgWeight = 1.6;
+      posWeight = 58;
+      chgWeight = 2.4;
     } else if (lowerTf === '30m') {
-      posWeight = 42;
-      chgWeight = 1.4;
+      posWeight = 48;
+      chgWeight = 1.8;
     } else if (lowerTf === '4h') {
-      posWeight = 30;
-      chgWeight = 1.0;
+      posWeight = 28;
+      chgWeight = 0.9;
     } else if (lowerTf === '1d') {
-      posWeight = 24;
-      chgWeight = 0.8;
+      posWeight = 20;
+      chgWeight = 0.65;
     }
 
     const posComponent = (pos - 0.5) * posWeight;
-    const changeComponent = Math.max(-28, Math.min(28, priceChangePercent * chgWeight));
-    const est = Math.max(12, Math.min(92, 50 + posComponent + changeComponent));
+    const changeComponent = Math.max(-32, Math.min(32, priceChangePercent * chgWeight));
+    const est = Math.max(10, Math.min(94, 50 + posComponent + changeComponent));
     return parseFloat(est.toFixed(1));
   }
 
@@ -970,14 +970,14 @@ apiRouter.get('/market/live-overview', async (req: Request, res: Response) => {
   try {
     await binanceDiscoveryService.refreshEligibleSymbols();
 
-    // Pre-warm candles for core tracked symbols on requested timeframe
+    // Pre-warm candles for ALL core tracked symbols on requested timeframe
     const missingTracked = DASHBOARD_TRACKED_SYMBOLS.filter(sym => {
       const c = candleStore.getCandles(sym, tf.toLowerCase());
       return !c || c.length < 15;
     });
     if (missingTracked.length > 0) {
       await Promise.allSettled(
-        missingTracked.slice(0, 16).map(s => fetchAndStoreKlines(s, tf.toLowerCase(), 150))
+        missingTracked.map(s => fetchAndStoreKlines(s, tf.toLowerCase(), 150))
       );
     }
 
